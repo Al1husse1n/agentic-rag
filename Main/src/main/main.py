@@ -77,27 +77,12 @@ def reranker_function(query:str, documents:list) -> list[str]:
     
     return docs
 
-@tool               #retriever is a tool, b/c it may not always need to retrieve
-def retriever_tool(query:str):
-    """retrieves relevant information from the knowledge base from the query"""
-    infos = retriever.invoke(query)
-    if not infos:
-        return "no relevant information was found"
 
-    results = []
-
-    for info in infos:
-        results.append(info)
-
-    return results
-
-
-tools = [retriever_tool]
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-flash",
-    temperature=0.5
-).bind_tools(tools)
+    temperature=0.3
+)
 
 
 class AgentState(TypedDict):
@@ -107,9 +92,25 @@ class AgentState(TypedDict):
     question: HumanMessage
 
 
-
-def reranker(state:AgentState) -> AgentState:
+def initial_agent(state:AgentState) -> AgentState:
     return state
+
+def retriever_agent(state: AgentState) -> AgentState:
+    return state
+
+
+def reranker_agent(state:AgentState) -> AgentState:
+    return state
+
+
+def validator_agent(state:AgentState) -> AgentState:
+    return state
+
+
+def summarizer_agent(state:AgentState) -> AgentState:
+    return state
+
+
 
     
 
