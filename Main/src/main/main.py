@@ -93,6 +93,8 @@ class AgentState(TypedDict):
     max_retry: int
     need_retrieval: bool
     question: HumanMessage
+    retrieved_docs: list    
+    
 
 class InitialResponse(BaseModel):
     """Route the user query to the appropriate pipeline."""
@@ -123,7 +125,8 @@ You are an intent analyzer and router for an assistant. Your task is to analyze 
     assert isinstance(result, InitialResponse)
     if result.need_retrieval:
         return {
-            "need_retrieval": True
+            "need_retrieval": True,
+            "question": HumanMessage(state["messages"][-1])
         }
     else:
         print(result.response)
@@ -134,11 +137,19 @@ You are an intent analyzer and router for an assistant. Your task is to analyze 
         
 
 
-def retriever_agent(state: AgentState) -> AgentState:
-    return state
+def retriever_agent(state: AgentState) -> dict:
+    question = str(state["question"])
+    docs = retriever.invoke(question) 
+    return{
+        "retrieved_docs": docs,
+        "trie"
+    }
 
 
 def reranker_agent(state: AgentState) -> AgentState:
+    stringified_docs = [doc.page_content for doc in state["retrieved_docs"]]
+    question = str(state["question"])
+    reranked_docs = reranker_function(question, stringified_docs)
     return state
 
 
@@ -150,8 +161,20 @@ def summarizer_agent(state: AgentState) -> AgentState:
     return state
 
 
+#conditional routers
+def initial_router(state: AgentState) -> str:
+    if state["need_retrieval"] and isinstance(state["messages"][-1], AIMessage):
+        return "need retrieval"
+    else:
+        return "quit"
+
+def retry_router(state: AgentState) -> str:
+    return "str"
+
+
 
     
+
 
 
 
