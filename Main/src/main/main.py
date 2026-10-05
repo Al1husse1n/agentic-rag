@@ -12,11 +12,13 @@ from langchain_chroma import Chroma
 from langchain_core.tools import tool
 import cohere
 from langchain_core.documents import Document
+from langgraph.constants import Send
 from pydantic import BaseModel, Field
 
-from .llm_schemas import AgentState, InitialResponse, ValidatorResponse, ClassifierResponse
-from .system_prompts import initial_prompt, classifier_prompt, validator_prompt
+from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse
+from .system_prompts import initial_prompt,validator_prompt, decomposer_prompt, synthesizer_prompt
 from .retriever import reranker_function, retriever
+from .helper_functions import format_reranked_results
 
 
 load_dotenv()
@@ -40,7 +42,7 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
     if result.need_retrieval:
         return {
             "need_retrieval": True,
-            "question": HumanMessage(state["messages"][-1])
+            
         }
     else:
         print(result.response)
@@ -50,60 +52,105 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
         }
         
 
-def classifier_agent(state: AgentState) -> dict:
-    system_prompt = SystemMessage(content=classifier_prompt)
-    messages = [system_prompt] + list(state["question"])
-    structured_llm = llm.with_structured_output(ClassifierResponse)
+def decomposer_agent(state: AgentState) -> AgentState:
+    system_prompt = SystemMessage(content=decomposer_prompt)
+    messages = [system_prompt] + list(state["messages"][-1])
+    structured_llm = llm.with_structured_output(DecomposerResponse)
     result = structured_llm.invoke(messages)
-    assert isinstance(result, ClassifierResponse)
+    assert isinstance(result, DecomposerResponse)
 
-    if result.is_single_question:
-        return{
-            "is_single_question" : True
-        }
+    for sub_question in result.sub_questions:
+        state["sub_questions"].append(sub_question)
     
-    else:
-        return{
-            "is_single_question" : False
-        }
+    return state
+
 
 def retriever_agent(state: AgentState) -> dict:
-    question = str(state["question"])
+    question = state["question"]
     docs = retriever.invoke(question) 
+    retrieved_result = RetrievedResult(
+        question=question,
+        documents=docs
+    )
     return{
-        "retrieved_docs": docs,
-        "try_no": state["try_no"] + 1
+        "retrieved_results": retrieved_result,
+        "documents": docs                      # each branck gets separate state
+        #"try_no": state["try_no"] + 1      add this inside the validator, since its a shared state it's added per sub question
     }
 
 
 def reranker_agent(state: AgentState) -> dict:
-    stringified_docs = [doc.page_content for doc in state["retrieved_docs"]]
-    question = str(state["question"])
-    reranked_docs = reranker_function(question, stringified_docs)
+    docs = state["documents"]
+    question = state["question"]
+    reranked_docs = reranker_function(question, docs)
+    reranked_results = RerankedResult(
+        question=question,
+        documents=reranked_docs    
+    )
     return {
-        "reranked_docs":reranked_docs
+        "reranked_results":reranked_results
     }
 
 
+def synthesizer_agent(state: AgentState) -> dict:
+    system_prompt = SystemMessage(content=synthesizer_prompt)
+    evidence = format_reranked_results(state["reranked_results"])
+    user_question = state["messages"][-1]   
+    # context = state["messages"][-5:]          context can be added, to the humanmessage at the bottom
+    message = HumanMessage(content=f"""
+    Current user query:
+{user_question}
+
+Retrieved evidence:
+{evidence}
+
+Using the conversation context and retrieved evidence, answer the
+current user query.
+
+Use the retrieved evidence as the factual source of truth.
+Use conversation context only to understand references, intent,
+and missing context.
+    """)
+
+    structured_llm = llm.with_structured_output(SynthesizerResponse)
+    result = structured_llm.invoke([system_prompt, message])
+    assert isinstance(result, SynthesizerResponse)
+
+    return{
+        "final_answer": result.final_answer
+    }
+    
+
 def validator_agent(state: AgentState) -> AgentState:
-    question = str(state["question"])
+    system_prompt = SystemMessage(content=validator_prompt)
     reranked_docs = state["reranked_docs"]
     system_prompt = validator_prompt(question, reranked_docs)
     return state
 
 
-def summarizer_agent(state: AgentState) -> AgentState:
-    return state
 
+
+
+#fanout function
+def retrieve_fan_out(state: AgentState):
+    return[
+        Send(
+            "retrieve",
+            {"question": question}
+        )
+        for question in state["sub_questions"]
+    ]
 
 
 
 #conditional routers
 def initial_router(state: AgentState) -> str:
     if state["need_retrieval"] and isinstance(state["messages"][-1], AIMessage):
-        return "need retrieval"
+        return "need retrieval"         #goes to decomposer
     else:
         return "quit"
+
+
 
 def retry_router(state: AgentState) -> str:
     return "str"

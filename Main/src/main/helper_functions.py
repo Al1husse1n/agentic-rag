@@ -1,6 +1,6 @@
 from langchain_core.documents import Document
 
-from main.llm_schemas import RerankedResult
+from main.schemas import RerankedResult
 
 
 def format_reranked_results(
