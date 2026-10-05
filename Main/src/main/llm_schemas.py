@@ -1,19 +1,30 @@
-from typing import TypedDict, Annotated, Sequence, Optional, NotRequired
+from typing import TypedDict, Annotated, Sequence, Optional, NotRequired, Literal
 from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel, Field
 from operator import add as add_messages
 import operator
+
+
+class RetrievedResult(TypedDict):
+    question: str
+    documents: list[str]
+
+class RerankedResult(TypedDict):
+    question: str
+    documents: list[str]
+
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     try_no: NotRequired[int] 
     max_retry: int
     need_retrieval: NotRequired[bool]
-    question: NotRequired[HumanMessage]
+    question: NotRequired[str]                  #used for both retriever and reducer
+    documents: NotRequired[list[str]]
     is_single_question: NotRequired[bool]
-    retrieved_docs: NotRequired[list] 
-    reranked_docs: NotRequired[list[str]] 
-    final_doc: NotRequired[str]   
+    sub_questions: NotRequired[list[str]]
+    retrieved_results: NotRequired[Annotated[list[RetrievedResult], operator.add]]          # we may need the pre-reranking candidates for retry logic, debugging, evaluation, fallback if retrieval fails
+    reranked_results: NotRequired[Annotated[list[RerankedResult], operator.add]]   
     final_answer: NotRequired[str] 
 
 
@@ -27,19 +38,29 @@ class InitialResponse(BaseModel):
         description="Provide a complete direct answer ONLY if need_retrieval is False. Leave as null/None if need_retrieval is True."
     )
 
-class ClassifierResponse(BaseModel):
-    is_single_question: bool = Field(
-        description="Set to True if the user is asking one information-seeking question and Set to False if the user is asking two or more independently answerable questions that may require different evidence or documents."
+
+class DecomposerResponse(BaseModel):
+    """decompose questions into sub-questions"""
+    sub_questions: list[str] = Field(
+        description="Provide a list of sub-questions(or a single question) decomposed from the user question"
+    )
+
+
+class SynthesizerResponse(BaseModel):
+    final_answer: str = Field(
+        description="Return ONLY the final answer that should be shown to the user"
     )
 
 class ValidatorResponse(BaseModel):
-    """Retrieve the document that answers the user question, if found"""
-    doc_found: bool = Field(
-        description="Set to True if there is a document that answers or matches the question from the user"
-    )
+    valid: bool
 
-    document: Optional[str] = Field(
-        default=None,
-        description="Provide the best document that answers or matches the question from the user, ONLY if doc_found is True"     
-    )
+    failure_type: Literal[
+        "none",
+        "decomposition",
+        "retrieval",
+        "reranking",
+        "synthesis",
+    ]
+
+    reason: str
 
