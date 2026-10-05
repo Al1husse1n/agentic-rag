@@ -3,15 +3,16 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from pydantic import BaseModel, Field
 from operator import add as add_messages
 import operator
+from langchain_core.documents import Document
 
 
 class RetrievedResult(TypedDict):
     question: str
-    documents: list[str]
+    documents: list[Document]
 
 class RerankedResult(TypedDict):
     question: str
-    documents: list[str]
+    documents: list[Document]
 
 
 class AgentState(TypedDict):
@@ -20,7 +21,7 @@ class AgentState(TypedDict):
     max_retry: int
     need_retrieval: NotRequired[bool]
     question: NotRequired[str]                  #used for both retriever and reducer
-    documents: NotRequired[list[str]]
+    documents: NotRequired[list[Document]]
     is_single_question: NotRequired[bool]
     sub_questions: NotRequired[list[str]]
     retrieved_results: NotRequired[Annotated[list[RetrievedResult], operator.add]]          # we may need the pre-reranking candidates for retry logic, debugging, evaluation, fallback if retrieval fails

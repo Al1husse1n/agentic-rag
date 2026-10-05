@@ -10,14 +10,14 @@ def format_reranked_results(
 
     for i, result in enumerate(reranked_results, start=1):
         question = result["question"]
-        documents: list[str] = result["documents"]
+        documents: list[Document] = result["documents"]
 
         section = f"Question {i}:\n{question}\n\nEvidence:\n"
 
         for j, doc in enumerate(documents, start=1):
             section += (
                 f"[Document {j}]\n"
-                f"{doc}\n"
+                f"{doc.page_content}\n"
             )
 
         sections.append(section)

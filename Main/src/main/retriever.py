@@ -56,16 +56,14 @@ co = cohere.ClientV2(
 )
 
 
-def reranker_function(query:str, documents:list) -> list[str]:
+def reranker_function(query: str, documents: list[Document]) -> list[Document]:
+    doc_texts = [doc.page_content for doc in documents]
+
     results = co.rerank(
         model="rerank-v4.0-fast",
         query=query,
-        documents=documents,
+        documents=doc_texts,
         top_n=3
-    ) 
-    
-    docs = []
-    for result in results.results:
-        docs.append(documents[result.index])
-    
-    return docs
+    )
+
+    return [documents[result.index] for result in results.results]
