@@ -37,4 +37,4 @@ def compress_reranked_results(reranked_results: list[RerankedResult]) -> dict[st
         result["question"]: [doc.page_content for doc in result["documents"]]
         for result in reranked_results
     }
-
+
