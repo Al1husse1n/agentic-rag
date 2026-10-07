@@ -1,6 +1,6 @@
 from langchain_core.documents import Document
 
-from main.schemas import RerankedResult
+from main.schemas import RerankedResult, RetrievedResult
 
 
 def format_reranked_results(
@@ -23,3 +23,18 @@ def format_reranked_results(
         sections.append(section)
 
     return "\n\n".join(sections)
+
+
+def compress_retrieved_results(retrieved_results: list[RetrievedResult]) -> dict[str, list[str]]:
+    return {
+        result["question"]: [doc.page_content for doc in result["documents"]]
+        for result in retrieved_results
+    }
+
+
+def compress_reranked_results(reranked_results: list[RerankedResult]) -> dict[str, list[str]]:
+    return {
+        result["question"]: [doc.page_content for doc in result["documents"]]
+        for result in reranked_results
+    }
+
