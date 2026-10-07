@@ -15,10 +15,10 @@ from langchain_core.documents import Document
 from langgraph.constants import Send
 from pydantic import BaseModel, Field
 
-from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse
+from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse, ValidationResult
 from .system_prompts import initial_prompt,validator_prompt, decomposer_prompt, synthesizer_prompt
 from .retriever import reranker_function, retriever
-from .helper_functions import format_reranked_results
+from .helper_functions import format_reranked_results, compress_reranked_results, compress_retrieved_results
 
 
 load_dotenv()
@@ -121,14 +121,38 @@ and missing context.
     }
     
 
-def validator_agent(state: AgentState) -> AgentState:
+def validator_agent(state: AgentState) -> dict:
     system_prompt = SystemMessage(content=validator_prompt)
-    reranked_docs = state["reranked_docs"]
-    system_prompt = validator_prompt(question, reranked_docs)
-    return state
+    user_question = state["messages"][-1].content
+    final_answer = state["final_answer"]
+    compressed_retrieved_results = compress_retrieved_results(state["retrieved_results"])
+    compressed_reranked_results = compress_reranked_results(state["reranked_results"])
+    message = HumanMessage(content=f"""
+    Orginal user query:
+    {user_question}
 
+    Retrieved Evidence:
+    {compressed_retrieved_results}
 
+    Reranked Evidence:
+    {compressed_reranked_results}
 
+    synthesized final answer:
+    {final_answer}
+    """)
+
+    structured_llm = llm.with_structured_output(ValidatorResponse)    
+    result = structured_llm.invoke([system_prompt, message])
+    assert isinstance(result, ValidatorResponse)
+    validation_result = ValidationResult(
+        is_valid=result.is_valid,
+        failure_type=result.failure_type,
+        reason=result.reason
+    )
+    
+    return {
+        "validation_result": validation_result
+    }
 
 
 #fanout function
