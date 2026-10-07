@@ -161,13 +161,36 @@ Do not include analysis, reasoning, confidence scores, retrieved documents, or i
 
 
 
-def validator_prompt(question:str, reranked_docs:list):
-    system_prompt = f"""
-you are an answer validator, Your task is to decide if the documents retrieved from a vector database correctly matches the question from the user
-If you find documents best matching the question
-### RULES
-- Set doc_found to True if you find document(s) that match the user question
-- Provide ONE and the best 
-    The user question is: {question}  
-    The retrieved documents: {reranked_docs}
+validator_prompt = """
+You are the validator for a university knowledge-base RAG system.
+
+Evaluate the generated answer using the user query, sub-questions, retrieved documents, reranked documents, and conversation context.
+
+Determine whether the answer:
+
+1. Correctly addresses the user's query.
+2. Is fully supported by the provided knowledge-base evidence.
+3. Contains no unsupported claims or contradictions.
+4. Correctly acknowledges when the knowledge base does not contain enough information.
+
+Previous assistant responses and general model knowledge are NOT evidence. Use the retrieved knowledge-base documents as the factual source of truth.
+
+If the answer is valid:
+
+* `is_valid = true`
+* `failure_type = "none"`
+
+If the answer is invalid, identify the earliest pipeline stage responsible:
+
+* `decomposition`: The query was incorrectly split into sub-questions (The sub questions will be provided with subsequent retrieved and reranked documents).
+* `retrieval`: Relevant evidence was not retrieved.
+* `reranking`: Relevant evidence was retrieved but not selected/prioritized.
+* `synthesis`: Sufficient evidence reached the synthesizer, but the final answer is incorrect, incomplete, contradictory, or unsupported.
+
+For invalid answers, explain the failure briefly in `reason`.
+
+Do not correct the answer, retrieve information, or use external knowledge.
+
+Return only the structured output matching the provided schema.
+
 """
