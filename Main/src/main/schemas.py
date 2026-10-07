@@ -14,6 +14,19 @@ class RerankedResult(TypedDict):
     question: str
     documents: list[Document]
 
+class ValidationResult(TypedDict):
+    is_valid: bool
+    
+    failure_type: Literal[
+        "none",
+        "decomposition",
+        "retrieval",
+        "reranking",
+        "synthesis",
+    ]
+
+    reason: str
+
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
@@ -27,6 +40,7 @@ class AgentState(TypedDict):
     retrieved_results: NotRequired[Annotated[list[RetrievedResult], operator.add]]          # we may need the pre-reranking candidates for retry logic, debugging, evaluation, fallback if retrieval fails
     reranked_results: NotRequired[Annotated[list[RerankedResult], operator.add]]   
     final_answer: NotRequired[str] 
+    validation_result: NotRequired[ValidationResult]
 
 
 class InitialResponse(BaseModel):
@@ -53,7 +67,7 @@ class SynthesizerResponse(BaseModel):
     )
 
 class ValidatorResponse(BaseModel):
-    valid: bool
+    is_valid: bool
 
     failure_type: Literal[
         "none",
