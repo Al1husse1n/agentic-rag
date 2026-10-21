@@ -26,15 +26,16 @@ load_dotenv()
 
 
 llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-flash",
+    model="gemini-2.5-flash",
     temperature=0.3
 )
 
 
 def initial_agent(state: AgentState) -> dict[str, Any]:
+    print(">>> Initial Agent called")
     system_prompt = initial_prompt
 
-    messages = [SystemMessage(content=system_prompt)] + list(state["messages"][-1])    #state is wrapped in list so it can satisfy pyright
+    messages = [SystemMessage(content=system_prompt)] + [state["messages"][-1]]    #state is wrapped in list so it can satisfy pyright
     structured_llm = llm.with_structured_output(InitialResponse)
     result = structured_llm.invoke(messages)
     #result: InitialResponse = structured_llm.invoke(messages)
@@ -53,8 +54,9 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
         
 
 def decomposer_agent(state: AgentState) -> AgentState:
+    print(">>> Decomposer Agent called")
     system_prompt = SystemMessage(content=decomposer_prompt)
-    messages = [system_prompt] + list(state["messages"][-1])
+    messages = [system_prompt] + [state["messages"][-1]]
     structured_llm = llm.with_structured_output(DecomposerResponse)
     result = structured_llm.invoke(messages)
     assert isinstance(result, DecomposerResponse)
@@ -66,6 +68,7 @@ def decomposer_agent(state: AgentState) -> AgentState:
 
 
 def retriever_agent(state: AgentState) -> dict:
+    print(">>> Retriever Agent called")
     question = state["question"]
     docs = retriever.invoke(question) 
     retrieved_result = RetrievedResult(
@@ -75,11 +78,12 @@ def retriever_agent(state: AgentState) -> dict:
     return{
         "retrieved_results": retrieved_result,
         "documents": docs                      # each branck gets separate state
-        #"try_no": state["try_no"] + 1      add this inside the validator, since its a shared state it's added per sub question
+        #"try_no": state["try_no"] + 1      add this inside the synthesizer, since its a shared state it's added per sub question
     }
 
 
 def reranker_agent(state: AgentState) -> dict:
+    print(">>> Reranker Agent called")
     docs = state["documents"]
     question = state["question"]
     reranked_docs = reranker_function(question, docs)
@@ -93,6 +97,7 @@ def reranker_agent(state: AgentState) -> dict:
 
 
 def synthesizer_agent(state: AgentState) -> dict:
+    print(">>> Synthesizer Agent called")
     system_prompt = SystemMessage(content=synthesizer_prompt)
     evidence = format_reranked_results(state["reranked_results"])
     user_question = state["messages"][-1]   
@@ -117,11 +122,13 @@ and missing context.
     assert isinstance(result, SynthesizerResponse)
 
     return{
-        "final_answer": result.final_answer
+        "final_answer": result.final_answer,
+        "try_no": state["try_no"] + 1 
     }
     
 
 def validator_agent(state: AgentState) -> dict:
+    print(">>> Validator Agent called")
     system_prompt = SystemMessage(content=validator_prompt)
     user_question = state["messages"][-1].content
     final_answer = state["final_answer"]
@@ -159,7 +166,7 @@ def validator_agent(state: AgentState) -> dict:
 def retrieve_fan_out(state: AgentState):
     return[
         Send(
-            "retrieve",
+            "retriever",
             {"question": question}
         )
         for question in state["sub_questions"]
@@ -170,23 +177,103 @@ def retrieve_fan_out(state: AgentState):
 #conditional routers
 def initial_router(state: AgentState) -> str:
     if state["need_retrieval"] and isinstance(state["messages"][-1], AIMessage):
-        return "need retrieval"         #goes to decomposer
+        return "need_retrieval"         #goes to decomposer
     else:
         return "quit"
 
 
 
-def retry_router(state: AgentState) -> str:
-    return "str"
-
-
-
+def retry_router(state: AgentState):
+    validation = state["validation_result"]
+    if validation.is_valid:
+        return "END"
     
+    if state.get("try_no", 1) >= state.get("max_try", 1):
+        return "END"
+    
+    if validation.failure_type == "retrieval":
+        return retrieve_fan_out(state)
+
+    return validation.failure_type
 
 
 
+graph = StateGraph(AgentState)
+
+graph.add_node("initial", initial_agent)
+graph.add_node("decomposer", decomposer_agent)
+graph.add_node("retriever", retriever_agent)
+graph.add_node("reranker", reranker_agent)
+graph.add_node("synthesizer", synthesizer_agent)
+graph.add_node("validator", validator_agent)
+
+graph.add_edge(START, "initial")
+
+graph.add_conditional_edges(
+    "initial",
+    initial_router,
+    {
+        "need_retrieval": "decomposer",
+        "quit": END
+    }
+)
+
+graph.add_conditional_edges(
+    "decomposer",
+    retrieve_fan_out,
+    ["retriever"]
+)
+
+graph.add_edge("retriever", "reranker")
+graph.add_edge("reranker", "synthesizer")
+graph.add_edge("synthesizer", "validator")
+
+graph.add_conditional_edges(
+    "validator",
+    retry_router,
+    {
+        "END": END,
+        "decomposition": "decomposer",
+        "reranking": "reranker",
+        "synthesis": "synthesizer"
+    }
+)
 
 
+main = graph.compile()
+
+print(main.get_graph().print_ascii())
+
+# Save graph visualization to Mermaid file (.mmd)
+with open("graph.mmd", "w", encoding="utf-8") as f:
+    f.write(main.get_graph().draw_mermaid())
+print("graph.mmd was written successfully.")
+
+# Save graph visualization as PNG image (.png) with fallback if dependencies are missing
+try:
+    with open("graph.png", "wb") as f:
+        f.write(main.get_graph().draw_mermaid_png())
+    print("graph.png was written successfully.")
+except Exception:
+    print("PNG skipped: install pyppeteer (pip install pyppeteer) to render PNG. Mermaid file was still written to graph.mmd.")
 
 
+# --- TEST THE AGENT ---
+print("\n--- Running Agent ---")
+user_query = "What are you?" # Ask a question about your 2-page PDF
 
+# We must initialize the state. 
+# Note: Make sure 'max_retry' is here so your retry_router works!
+initial_state = {
+    "messages": [HumanMessage(content=user_query)],
+    "max_retry": 3,
+    "retry_count": 0,
+    "try_no": 0
+}
+
+# Run the graph
+result = main.invoke(initial_state)
+
+# Print the final answer
+print("\n--- FINAL ANSWER ---")
+print(result.get("final_answer"))
