@@ -31,7 +31,7 @@ class ValidationResult(TypedDict):
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
     try_no: NotRequired[int] 
-    max_retry: int
+    max_try: int
     need_retrieval: NotRequired[bool]
     question: NotRequired[str]                  #used for both retriever and reducer
     documents: NotRequired[list[Document]]

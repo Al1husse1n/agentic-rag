@@ -8,7 +8,6 @@ You are an intent analyzer and router for an assistant. Your task is to analyze 
 2. Set `need_retrieval = False` if the user asks a general question, programming request, greeting, logic puzzle, or general knowledge question unrelated to Ethiopia.
    - When `need_retrieval = False`, provide your complete, helpful answer directly inside the `response` field.   
 """
-
 decomposer_prompt = """
 You are a query decomposition component for a university/school knowledge-base RAG system.
 
