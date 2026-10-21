@@ -7,10 +7,16 @@ from langchain_chroma import Chroma
 from langchain_core.tools import tool
 import cohere
 from langchain_core.documents import Document
-
+from pathlib import Path
+import pypdf
 load_dotenv()
 
-pdf_path = "ethiopia_rag_practice.pdf"
+# Get the directory where retriever.py is located
+BASE_DIR = Path(__file__).resolve().parent 
+
+# Construct the absolute path to the PDF
+pdf_path = BASE_DIR / "ethiopia_rag_practice.pdf"
+
 pdf_loader = PyPDFLoader(pdf_path)
 
 try:
@@ -29,7 +35,7 @@ pages_split = text_splitter.split_documents(pages)
 
 
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
+    model="gemini-embedding-001",
 )
 
 try:
