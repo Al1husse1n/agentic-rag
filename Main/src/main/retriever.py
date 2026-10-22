@@ -12,30 +12,6 @@ from pathlib import Path
 import pypdf
 load_dotenv()
 
-# Get the directory where retriever.py is located
-BASE_DIR = Path(__file__).resolve().parent 
-
-# Construct the absolute path to the PDF
-pdf_path = BASE_DIR / "ethiopia_rag_practice.pdf"
-
-pdf_loader = PyPDFLoader(pdf_path)
-
-try:
-    pdf_start = time.time()
-    pages = pdf_loader.load()
-    print(f"PDF has been loaded and has {len(pages)} pages")
-    print(f"⏱ PDF loading took {time.time() - pdf_start:.4f}s")
-except Exception as e:
-    print(f"Error loading PDF: {e}")
-    raise
-
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
-    chunk_overlap=100
-)
-
-pages_split = text_splitter.split_documents(pages)
-
 
 embeddings = GoogleGenerativeAIEmbeddings(
     model="gemini-embedding-001",
@@ -43,17 +19,16 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 try:
     chroma_start = time.time()
-    vector_store = Chroma.from_documents(
-        documents=pages_split,
-        embedding=embeddings,
-        persist_directory=r"C:\Users\Lenovo\Desktop\Ali\langgraph\quiz",
-        collection_name="ethiopia"
+    vector_store = Chroma(
+        persist_directory=r"C:\Users\Lenovo\Desktop\Ali\RAG Template\agentic-rag\Main\database",
+        collection_name="ethiopia",
+        embedding_function=embeddings
     )
-    print("ChromaDB created")
-    print(f"⏱ ChromaDB creation took {time.time() - chroma_start:.4f}s")
+    print(">>> Loaded existing ChromaDB successfully")
+    print(f"⏱ ChromaDB loading took {time.time() - chroma_start:.4f}s")
 
 except Exception as e:
-    print(f"Error setting up chroma DB: {e}")
+    print(f"Error loading Chroma DB: {e}")
     raise
 
 retriever = vector_store.as_retriever(
