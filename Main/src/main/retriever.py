@@ -21,8 +21,10 @@ pdf_path = BASE_DIR / "ethiopia_rag_practice.pdf"
 pdf_loader = PyPDFLoader(pdf_path)
 
 try:
+    pdf_start = time.time()
     pages = pdf_loader.load()
     print(f"PDF has been loaded and has {len(pages)} pages")
+    print(f"⏱ PDF loading took {time.time() - pdf_start:.4f}s")
 except Exception as e:
     print(f"Error loading PDF: {e}")
     raise
@@ -40,6 +42,7 @@ embeddings = GoogleGenerativeAIEmbeddings(
 )
 
 try:
+    chroma_start = time.time()
     vector_store = Chroma.from_documents(
         documents=pages_split,
         embedding=embeddings,
@@ -47,6 +50,7 @@ try:
         collection_name="ethiopia"
     )
     print("ChromaDB created")
+    print(f"⏱ ChromaDB creation took {time.time() - chroma_start:.4f}s")
 
 except Exception as e:
     print(f"Error setting up chroma DB: {e}")
