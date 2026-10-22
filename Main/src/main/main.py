@@ -1,5 +1,6 @@
 from dotenv import load_dotenv         
 import os
+import time
 from langgraph.graph import StateGraph, END,START         
 from typing import Any, TypedDict, Annotated, Sequence, Optional, NotRequired
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, ToolMessage, AIMessage      
@@ -12,8 +13,9 @@ from langchain_chroma import Chroma
 from langchain_core.tools import tool
 import cohere
 from langchain_core.documents import Document
-from langgraph.constants import Send
+from langgraph.types import Overwrite, Send
 from pydantic import BaseModel, Field
+
 
 from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse, ValidationResult
 from .system_prompts import initial_prompt,validator_prompt, decomposer_prompt, synthesizer_prompt
@@ -32,28 +34,33 @@ llm = ChatGoogleGenerativeAI(
 
 
 def initial_agent(state: AgentState) -> dict[str, Any]:
+    start = time.time()
     print(">>> Initial Agent called")
     system_prompt = initial_prompt
 
     messages = [SystemMessage(content=system_prompt)] + [state["messages"][-1]]    #state is wrapped in list so it can satisfy pyright
     structured_llm = llm.with_structured_output(InitialResponse)
     result = structured_llm.invoke(messages)
+    print(result)
     #result: InitialResponse = structured_llm.invoke(messages)
     assert isinstance(result, InitialResponse)
     if result.need_retrieval:
+        print(f"⏱ initial_agent took {time.time() - start:.4f}s")
         return {
             "need_retrieval": True,
             
         }
     else:
         print(result.response)
+        print(f"⏱ initial_agent took {time.time() - start:.4f}s")
         return {
             "need_retrieval": False,
             "messages": [AIMessage(content=result.response or "")]
         }
         
 
-def decomposer_agent(state: AgentState) -> AgentState:
+def decomposer_agent(state: AgentState) -> dict:
+    start = time.time()
     print(">>> Decomposer Agent called")
     system_prompt = SystemMessage(content=decomposer_prompt)
     messages = [system_prompt] + [state["messages"][-1]]
@@ -61,13 +68,15 @@ def decomposer_agent(state: AgentState) -> AgentState:
     result = structured_llm.invoke(messages)
     assert isinstance(result, DecomposerResponse)
 
-    for sub_question in result.sub_questions:
-        state["sub_questions"].append(sub_question)
-    
-    return state
+    print(f"⏱ decomposer_agent took {time.time() - start:.4f}s")
+    return{
+        "sub_questions": result.sub_questions
+    }
+
 
 
 def retriever_agent(state: AgentState) -> dict:
+    start = time.time()
     print(">>> Retriever Agent called")
     question = state["question"]
     docs = retriever.invoke(question) 
@@ -75,14 +84,17 @@ def retriever_agent(state: AgentState) -> dict:
         question=question,
         documents=docs
     )
+    print(f"⏱ retriever_agent took {time.time() - start:.4f}s")
     return{
-        "retrieved_results": retrieved_result,
-        "documents": docs                      # each branck gets separate state
+        "retrieved_results": [retrieved_result],
+        "documents": docs,                      # each branch gets separate state
+        "question": question
         #"try_no": state["try_no"] + 1      add this inside the synthesizer, since its a shared state it's added per sub question
     }
 
 
 def reranker_agent(state: AgentState) -> dict:
+    start = time.time()
     print(">>> Reranker Agent called")
     docs = state["documents"]
     question = state["question"]
@@ -91,12 +103,14 @@ def reranker_agent(state: AgentState) -> dict:
         question=question,
         documents=reranked_docs    
     )
+    print(f"⏱ reranker_agent took {time.time() - start:.4f}s")
     return {
-        "reranked_results":reranked_results
+        "reranked_results":[reranked_results]
     }
 
 
 def synthesizer_agent(state: AgentState) -> dict:
+    start = time.time()
     print(">>> Synthesizer Agent called")
     system_prompt = SystemMessage(content=synthesizer_prompt)
     evidence = format_reranked_results(state["reranked_results"])
@@ -121,6 +135,7 @@ and missing context.
     result = structured_llm.invoke([system_prompt, message])
     assert isinstance(result, SynthesizerResponse)
 
+    print(f"⏱ synthesizer_agent took {time.time() - start:.4f}s")
     return{
         "final_answer": result.final_answer,
         "try_no": state["try_no"] + 1 
@@ -128,6 +143,7 @@ and missing context.
     
 
 def validator_agent(state: AgentState) -> dict:
+    start = time.time()
     print(">>> Validator Agent called")
     system_prompt = SystemMessage(content=validator_prompt)
     user_question = state["messages"][-1].content
@@ -157,8 +173,28 @@ def validator_agent(state: AgentState) -> dict:
         reason=result.reason
     )
     
+    print(f"⏱ validator_agent took {time.time() - start:.4f}s")
     return {
         "validation_result": validation_result
+    }
+
+
+#Reset nodes for retry
+def reset_retriever_node(state:AgentState) -> dict:
+    start = time.time()
+    print(">>> Resetting stale retrieval state for retry...")
+    print(f"⏱ reset_retriever_node took {time.time() - start:.4f}s")
+    return{
+        "retrieved_results": Overwrite([]),
+        "reranked_results": Overwrite([])
+    }
+
+def reset_rerank_node(state: AgentState) -> dict:
+    start = time.time()
+    print(">>> Resetting stale rerank state for retry...")
+    print(f"⏱ reset_rerank_node took {time.time() - start:.4f}s")
+    return {
+        "reranked_results": Overwrite([])
     }
 
 
@@ -176,7 +212,7 @@ def retrieve_fan_out(state: AgentState):
 
 #conditional routers
 def initial_router(state: AgentState) -> str:
-    if state["need_retrieval"] and isinstance(state["messages"][-1], AIMessage):
+    if state["need_retrieval"]:
         return "need_retrieval"         #goes to decomposer
     else:
         return "quit"
@@ -185,14 +221,11 @@ def initial_router(state: AgentState) -> str:
 
 def retry_router(state: AgentState):
     validation = state["validation_result"]
-    if validation.is_valid:
+    if validation["is_valid"]:
         return "END"
     
     if state.get("try_no", 1) >= state.get("max_try", 1):
         return "END"
-    
-    if validation.failure_type == "retrieval":
-        return retrieve_fan_out(state)
 
     return validation.failure_type
 
@@ -206,6 +239,8 @@ graph.add_node("retriever", retriever_agent)
 graph.add_node("reranker", reranker_agent)
 graph.add_node("synthesizer", synthesizer_agent)
 graph.add_node("validator", validator_agent)
+graph.add_node("reset_retriever", reset_retriever_node)
+graph.add_node("reset_reranker", reset_rerank_node)
 
 graph.add_edge(START, "initial")
 
@@ -234,11 +269,18 @@ graph.add_conditional_edges(
     {
         "END": END,
         "decomposition": "decomposer",
-        "reranking": "reranker",
+        "retrieval": "reset_retriever",
+        "reranking": "reset_reranker",
         "synthesis": "synthesizer"
     }
 )
 
+graph.add_conditional_edges(
+    "reset_retriever",
+    retrieve_fan_out,
+    ["retriever"]
+)
+graph.add_edge("reset_reranker", "reranker")
 
 main = graph.compile()
 
@@ -260,7 +302,7 @@ except Exception:
 
 # --- TEST THE AGENT ---
 print("\n--- Running Agent ---")
-user_query = "What are you?" # Ask a question about your 2-page PDF
+user_query = "Tell me about ethiopia's geography" # Ask a question about your 2-page PDF
 
 # We must initialize the state. 
 # Note: Make sure 'max_retry' is here so your retry_router works!
@@ -268,7 +310,7 @@ initial_state = {
     "messages": [HumanMessage(content=user_query)],
     "max_retry": 3,
     "retry_count": 0,
-    "try_no": 0
+    "try_no": 0,
 }
 
 # Run the graph

@@ -1,5 +1,6 @@
 from dotenv import load_dotenv         
 import os
+import time
 from langchain_google_genai import GoogleGenerativeAIEmbeddings    
 from langchain_community.document_loaders import PyPDFLoader           
 from langchain_text_splitters import RecursiveCharacterTextSplitter     
@@ -63,6 +64,7 @@ co = cohere.ClientV2(
 
 
 def reranker_function(query: str, documents: list[Document]) -> list[Document]:
+    start = time.time()
     doc_texts = [doc.page_content for doc in documents]
 
     results = co.rerank(
@@ -72,4 +74,6 @@ def reranker_function(query: str, documents: list[Document]) -> list[Document]:
         top_n=3
     )
 
-    return [documents[result.index] for result in results.results]
+    reranked = [documents[result.index] for result in results.results]
+    print(f"⏱ reranker_function took {time.time() - start:.4f}s")
+    return reranked
