@@ -48,8 +48,9 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
     print(result.response)
     return {
         "need_retrieval": result.need_retrieval,
+        "need_clarification": result.need_clarification,
         "user_question": state["messages"][-1].content,
-        **({"messages": AIMessage(content=result.response or "")} if not result.need_retrieval else {})
+        **({"messages": [AIMessage(content=result.response or "")]} if not result.need_retrieval else {})
     }
         
 
@@ -109,9 +110,18 @@ def synthesizer_agent(state: AgentState) -> dict:
     system_prompt = SystemMessage(content=synthesizer_prompt)
     evidence = format_reranked_results(state["reranked_results"])
     user_question = state["user_question"]   
-    # context = state["messages"][-5:]          context can be added, to the humanmessage at the bottom
+
+    recent_messages = state.get("messages", [])[:-1][-5:]
+    context_transcript = "\n".join([
+        f"{msg.type.capitalize()}: {msg.content}" 
+        for msg in recent_messages
+    ]) if recent_messages else "No prior conversation context."
+
     message = HumanMessage(content=f"""
-    Current user query:
+Conversation History:
+{context_transcript}
+
+Current user query:
 {user_question}
 
 Retrieved evidence:
@@ -145,18 +155,28 @@ def validator_agent(state: AgentState) -> dict:
     final_answer = state["final_answer"]
     compressed_retrieved_results = compress_retrieved_results(state["retrieved_results"])
     compressed_reranked_results = compress_reranked_results(state["reranked_results"])
+
+    recent_messages = state.get("messages", [])[:-1][-5:]
+    context_transcript = "\n".join([
+        f"{msg.type.capitalize()}: {msg.content}" 
+        for msg in recent_messages
+    ]) if recent_messages else "No prior conversation context."
+
     message = HumanMessage(content=f"""
-    Orginal user query:
-    {user_question}
+Conversation History:
+{context_transcript}
 
-    Retrieved Evidence:
-    {compressed_retrieved_results}
+Orginal user query:
+{user_question}
 
-    Reranked Evidence:
-    {compressed_reranked_results}
+Retrieved Evidence:
+{compressed_retrieved_results}
 
-    synthesized final answer:
-    {final_answer}
+Reranked Evidence:
+{compressed_reranked_results}
+
+synthesized final answer:
+{final_answer}
     """)
 
     structured_llm = llm.with_structured_output(ValidatorResponse)    
@@ -207,7 +227,9 @@ def retrieve_fan_out(state: AgentState):
 
 #conditional routers
 def initial_router(state: AgentState) -> str:
-    if state["need_retrieval"]:
+    if state.get("need_clarification", False):
+        return "clarify"
+    elif state.get("need_retrieval", False):
         return "need_retrieval"         #goes to decomposer
     else:
         return "quit"
@@ -222,7 +244,7 @@ def retry_router(state: AgentState):
     if state.get("try_no", 1) >= state.get("max_try", 1):
         return "END"
 
-    return validation.failure_type
+    return validation["failure_type"]
 
 
 
@@ -243,6 +265,7 @@ graph.add_conditional_edges(
     "initial",
     initial_router,
     {
+        "clarify": END,
         "need_retrieval": "decomposer",
         "quit": END
     }
@@ -279,8 +302,6 @@ graph.add_edge("reset_reranker", "reranker")
 
 main = graph.compile()
 
-print(main.get_graph().print_ascii())
-
 # Save graph visualization to Mermaid file (.mmd)
 with open("graph.mmd", "w", encoding="utf-8") as f:
     f.write(main.get_graph().draw_mermaid())
@@ -297,7 +318,7 @@ except Exception:
 
 # --- TEST THE AGENT ---
 print("\n--- Running Agent ---")
-user_query = "Tell me about ethiopia's geography" # Ask a question about your 2-page PDF
+user_query = "tell me about ethiopias geography" # Ask a question about your 2-page PDF
 
 # We must initialize the state. 
 # Note: Make sure 'max_retry' is here so your retry_router works!
