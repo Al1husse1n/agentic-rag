@@ -36,34 +36,28 @@ llm = ChatGoogleGenerativeAI(
 def initial_agent(state: AgentState) -> dict[str, Any]:
     start = time.time()
     print(">>> Initial Agent called")
-    system_prompt = initial_prompt
-
-    messages = [SystemMessage(content=system_prompt)] + [state["messages"][-1]]    #state is wrapped in list so it can satisfy pyright
+    system_prompt = SystemMessage(content=initial_prompt)
+    #
+    messages = [system_prompt] + list(state["messages"][-5:])    #state is wrapped in list so it can satisfy pyright
     structured_llm = llm.with_structured_output(InitialResponse)
     result = structured_llm.invoke(messages)
     print(result)
     #result: InitialResponse = structured_llm.invoke(messages)
     assert isinstance(result, InitialResponse)
-    if result.need_retrieval:
-        print(f"⏱ initial_agent took {time.time() - start:.4f}s")
-        return {
-            "need_retrieval": True,
-            
-        }
-    else:
-        print(result.response)
-        print(f"⏱ initial_agent took {time.time() - start:.4f}s")
-        return {
-            "need_retrieval": False,
-            "messages": [AIMessage(content=result.response or "")]
-        }
+    print(f"⏱ initial_agent took {time.time() - start:.4f}s")
+    print(result.response)
+    return {
+        "need_retrieval": result.need_retrieval,
+        "user_question": state["messages"][-1].content,
+        **({"messages": AIMessage(content=result.response or "")} if not result.need_retrieval else {})
+    }
         
 
 def decomposer_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Decomposer Agent called")
     system_prompt = SystemMessage(content=decomposer_prompt)
-    messages = [system_prompt] + [state["messages"][-1]]
+    messages = [system_prompt] + list(state["messages"][-5:])
     structured_llm = llm.with_structured_output(DecomposerResponse)
     result = structured_llm.invoke(messages)
     assert isinstance(result, DecomposerResponse)
@@ -114,7 +108,7 @@ def synthesizer_agent(state: AgentState) -> dict:
     print(">>> Synthesizer Agent called")
     system_prompt = SystemMessage(content=synthesizer_prompt)
     evidence = format_reranked_results(state["reranked_results"])
-    user_question = state["messages"][-1]   
+    user_question = state["user_question"]   
     # context = state["messages"][-5:]          context can be added, to the humanmessage at the bottom
     message = HumanMessage(content=f"""
     Current user query:
@@ -146,7 +140,8 @@ def validator_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Validator Agent called")
     system_prompt = SystemMessage(content=validator_prompt)
-    user_question = state["messages"][-1].content
+    #replace with question
+    user_question = state["user_question"]
     final_answer = state["final_answer"]
     compressed_retrieved_results = compress_retrieved_results(state["retrieved_results"])
     compressed_reranked_results = compress_reranked_results(state["reranked_results"])
