@@ -30,6 +30,7 @@ class ValidationResult(TypedDict):
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], add_messages]
+    user_question: NotRequired[str]
     try_no: NotRequired[int] 
     max_try: int
     need_retrieval: NotRequired[bool]
@@ -41,7 +42,7 @@ class AgentState(TypedDict):
     reranked_results: NotRequired[Annotated[list[RerankedResult], operator.add]]   
     final_answer: NotRequired[str] 
     validation_result: NotRequired[ValidationResult]
-
+    
 
 class InitialResponse(BaseModel):
     """Route the user query to the appropriate pipeline."""
