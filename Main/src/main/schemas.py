@@ -34,6 +34,7 @@ class AgentState(TypedDict):
     try_no: NotRequired[int] 
     max_try: int
     need_retrieval: NotRequired[bool]
+    need_clarification: NotRequired[bool]
     question: NotRequired[str]                  #used for both retriever and reducer
     documents: NotRequired[list[Document]]
     is_single_question: NotRequired[bool]
@@ -49,9 +50,12 @@ class InitialResponse(BaseModel):
     need_retrieval: bool = Field(
         description="Set to True if the query asks about Ethiopia or needs document retrieval. Set to False if it is a general question."
     )
+    need_clarification: bool = Field(
+        description="True if the user's question is too vague, ambiguous, or lacks necessary context and requires asking a follow-up question."
+    )
     response: Optional[str] = Field(
         default=None,
-        description="Provide a complete direct answer ONLY if need_retrieval is False. Leave as null/None if need_retrieval is True."
+        description= "Provide the direct answer IF need_retrieval is False, OR provide the exact clarification question IF need_clarification is True. Leave as null/None ONLY when need_retrieval is True.."
     )
 
 
