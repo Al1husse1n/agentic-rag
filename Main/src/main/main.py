@@ -15,7 +15,7 @@ import cohere
 from langchain_core.documents import Document
 from langgraph.types import Overwrite, Send
 from pydantic import BaseModel, Field
-
+from .utils.logger import track_node_metrics
 
 from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse, ValidationResult
 from .system_prompts import initial_prompt,validator_prompt, decomposer_prompt, synthesizer_prompt
@@ -32,7 +32,7 @@ llm = ChatGoogleGenerativeAI(
     temperature=0.3
 )
 
-
+@track_node_metrics("InitialAgent")
 def initial_agent(state: AgentState) -> dict[str, Any]:
     start = time.time()
     print(">>> Initial Agent called")
@@ -53,7 +53,7 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
         **({"messages": [AIMessage(content=result.response or "")]} if not result.need_retrieval else {})
     }
         
-
+@track_node_metrics("DecomposerAgent")
 def decomposer_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Decomposer Agent called")
@@ -69,7 +69,7 @@ def decomposer_agent(state: AgentState) -> dict:
     }
 
 
-
+@track_node_metrics("RetrieverAgent")
 def retriever_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Retriever Agent called")
@@ -88,6 +88,7 @@ def retriever_agent(state: AgentState) -> dict:
     }
 
 
+@track_node_metrics("RerankerAgent")
 def reranker_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Reranker Agent called")
@@ -104,6 +105,7 @@ def reranker_agent(state: AgentState) -> dict:
     }
 
 
+@track_node_metrics("SynthesizerAgent")
 def synthesizer_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Synthesizer Agent called")
@@ -146,6 +148,7 @@ and missing context.
     }
     
 
+@track_node_metrics("ValidatorAgent")
 def validator_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Validator Agent called")
