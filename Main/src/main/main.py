@@ -344,14 +344,21 @@ def reset_rerank_node(state: AgentState) -> dict:
 
 #fanout function
 def retrieve_fan_out(state: AgentState):
-    return[
+    sub_questions = state.get("sub_questions", [])
+    
+    # Emergency fallback if sub_questions is empty or missing
+    if not sub_questions:
+        print("⚠️ [Fan-Out Warning] No sub_questions found. Falling back to single user query.")
+        fallback_q = state.get("user_question", "General query")
+        sub_questions = [fallback_q]
+        
+    return [
         Send(
             "retriever",
             {"question": question}
         )
-        for question in state["sub_questions"]
+        for question in sub_questions
     ]
-
 
 
 #conditional routers
