@@ -37,24 +37,27 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
     try:
         start = time.time()
         print(">>> Initial Agent called")
-        system_prompt = SystemMessage(content=initial_prompt)
-        if not system_prompt:
+        if not initial_prompt:
             print("⚠️ [Config Warning] initial_prompt is missing. Falling back to default.")
-            system_prompt = "You are a helpful assistant for Ethiopian higher education."
+            system_prompt = SystemMessage(content="You are a helpful assistant for Ethiopian higher education.")  # need impovement
+        else:
+            system_prompt = SystemMessage(content=initial_prompt)
+
         messages = [system_prompt] + list(state.get("messages", [])[-5:])    
         if not messages:
             raise ValueError("State contains no messages for initial processing.")
         try:
             structured_llm = llm.with_structured_output(InitialResponse)
             result = structured_llm.invoke(messages)
+            assert isinstance(result, InitialResponse)
         except Exception as e:
             print(f"⚠️ [Error Boundary] Structured output or API failure: {str(e)}")
             result = InitialResponse(
                 need_retrieval=True,       # Default safe fallback
                 need_clarification=False,  
             )
+
         print(result)
-        assert isinstance(result, InitialResponse)
         print(f"⏱ initial_agent took {time.time() - start:.4f}s")
 
         return {
@@ -90,37 +93,73 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
         }
         
 @track_node_metrics("DecomposerAgent")
-def decomposer_agent(state: AgentState) -> dict:
-    start = time.time()
-    print(">>> Decomposer Agent called")
-    system_prompt = SystemMessage(content=decomposer_prompt)
-    messages = [system_prompt] + list(state["messages"][-5:])
-    structured_llm = llm.with_structured_output(DecomposerResponse)
-    result = structured_llm.invoke(messages)
-    assert isinstance(result, DecomposerResponse)
+def decomposer_agent(state: AgentState) -> dict[str, Any]:
+    try:
+        start = time.time()
+        print(">>> Decomposer Agent called")
+        if not decomposer_prompt:
+            system_prompt = (content=("you are decomposer agent" ))                 # need improvement
+        else:
+            system_prompt = SystemMessage(content=decomposer_prompt)
 
-    print(f"⏱ decomposer_agent took {time.time() - start:.4f}s")
-    return{
-        "sub_questions": result.sub_questions
-    }
+        messages = [system_prompt] + list(state.get("messages", [])[-5:])
+        try:
+            structured_llm = llm.with_structured_output(DecomposerResponse)
+            result = structured_llm.invoke(messages)
+            assert isinstance(result, DecomposerResponse)
+        
+        except Exception as e:
+            print(f"⚠️ [Error Boundary] Structured output or API failure: {str(e)}")
+            raise         
+
+        print(f"⏱ decomposer_agent took {time.time() - start:.4f}s")
+        return{
+            "sub_questions": result.sub_questions
+        }
+
+    except Exception as e:
+        print(f"⚠️ [Error Boundary] Decomposer failed: {str(e)}. Falling back to direct query.")
+        
+        # Fallback: Use the user's original query as the sole sub-question
+        sub_questions = [state.get("user_question")]
+        
+        return {
+            "sub_questions": sub_questions
+        }
 
 
 @track_node_metrics("RetrieverAgent")
-def retriever_agent(state: AgentState) -> dict:
+def retriever_agent(state: AgentState) -> dict[str, Any]:
     start = time.time()
     print(">>> Retriever Agent called")
-    question = state["question"]
-    docs = retriever.invoke(question) 
-    retrieved_result = RetrievedResult(
-        question=question,
-        documents=docs
-    )
+    question = state.get("question")
+    if not question:
+        print("⚠️ [Retriever Warning] Missing question in state.")
+        return {
+            "retrieved_results": [],
+            "documents": [],
+            "question": ""
+        }
+    try:
+        docs = retriever.invoke(question) 
+        retrieved_result = RetrievedResult(
+            question=question,
+            documents=docs
+        )
+    except Exception as e:
+        print(f"⚠️ [Error Boundary] Retriever failed for query '{question}': {str(e)}")
+        # Fallback: return empty documents so downstream synthesis doesn't crash
+        docs = []
+        retrieved_result = RetrievedResult(
+            question=question,
+            documents=[]
+        )
+        
     print(f"⏱ retriever_agent took {time.time() - start:.4f}s")
-    return{
+    return {
         "retrieved_results": [retrieved_result],
-        "documents": docs,                      # each branch gets separate state
+        "documents": docs,
         "question": question
-        #"try_no": state["try_no"] + 1      add this inside the synthesizer, since its a shared state it's added per sub question
     }
 
 
@@ -128,109 +167,160 @@ def retriever_agent(state: AgentState) -> dict:
 def reranker_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Reranker Agent called")
-    docs = state["documents"]
-    question = state["question"]
-    reranked_docs = reranker_function(question, docs)
+    docs = state.get("documents", [])
+    question = state.get("question", "")
+
+    try:
+        if docs and question:
+            reranked_docs = reranker_function(question, docs)
+        else:
+            reranked_docs = docs
+    except Exception as e:
+        print(f"⚠️ [Error Boundary] Reranker failed: {str(e)}. Falling back to original documents.")
+        # Fallback: pass through original un-reranked documents
+        reranked_docs = docs
+        
     reranked_results = RerankedResult(
         question=question,
         documents=reranked_docs    
     )
+    
     print(f"⏱ reranker_agent took {time.time() - start:.4f}s")
     return {
-        "reranked_results":[reranked_results]
+        "reranked_results": [reranked_results]
     }
 
 
 @track_node_metrics("SynthesizerAgent")
 def synthesizer_agent(state: AgentState) -> dict:
-    start = time.time()
-    print(">>> Synthesizer Agent called")
-    system_prompt = SystemMessage(content=synthesizer_prompt)
-    evidence = format_reranked_results(state["reranked_results"])
-    user_question = state["user_question"]   
+    try:
+        start = time.time()
+        print(">>> Synthesizer Agent called")
+        prompt = synthesizer_prompt or "You are a helpful educational assistant for Ethiopian higher education."        #need improvement
+        system_prompt = SystemMessage(content=prompt)
 
-    recent_messages = state.get("messages", [])[:-1][-5:]
-    context_transcript = "\n".join([
-        f"{msg.type.capitalize()}: {msg.content}" 
-        for msg in recent_messages
-    ]) if recent_messages else "No prior conversation context."
+        evidence = format_reranked_results(state.get("reranked_results", []))
+        user_question = state.get("user_question", "General query")   
 
-    message = HumanMessage(content=f"""
-Conversation History:
-{context_transcript}
+        recent_messages = state.get("messages", [])[:-1][-5:] if len(state.get("messages", [])) > 1 else []
+        context_transcript = "\n".join([
+            f"{msg.type.capitalize()}: {msg.content}" 
+            for msg in recent_messages
+        ]) if recent_messages else "No prior conversation context."
 
-Current user query:
-{user_question}
+        message = HumanMessage(content=f"""
+    Conversation History:
+    {context_transcript}
 
-Retrieved evidence:
-{evidence}
+    Current user query:
+    {user_question}
 
-Using the conversation context and retrieved evidence, answer the
-current user query.
+    Retrieved evidence:
+    {evidence}
 
-Use the retrieved evidence as the factual source of truth.
-Use conversation context only to understand references, intent,
-and missing context.
-    """)
+    Using the conversation context and retrieved evidence, answer the
+    current user query.
 
-    structured_llm = llm.with_structured_output(SynthesizerResponse)
-    result = structured_llm.invoke([system_prompt, message])
-    assert isinstance(result, SynthesizerResponse)
+    Use the retrieved evidence as the factual source of truth.
+    Use conversation context only to understand references, intent,
+    and missing context.
+        """)
 
-    print(f"⏱ synthesizer_agent took {time.time() - start:.4f}s")
-    return{
-        "final_answer": result.final_answer,
-        "try_no": state["try_no"] + 1 
-    }
+        try:
+
+            structured_llm = llm.with_structured_output(SynthesizerResponse)
+            result = structured_llm.invoke([system_prompt, message])
+            assert isinstance(result, SynthesizerResponse)
+            final_answer = result.final_answer
+        except Exception as e:
+            print(f"⚠️ [Error Boundary] Synthesizer LLM invocation failed: {str(e)}")
+            final_answer = "I apologize, but I encountered an error generating the final response based on the retrieved documents."
+
+        print(f"⏱ synthesizer_agent took {time.time() - start:.4f}s")
+        return{
+            "final_answer": final_answer,
+            "try_no": state.get("try_no", 0) + 1 
+        }
+    
+    except Exception as e:
+        print(f"⚠️ [Critical Error in SynthesizerAgent]: {str(e)}")
+        return {
+            "final_answer": "An unexpected error occurred while synthesizing your answer.",
+            "try_no": state.get("try_no", 0) + 1,
+            "error_occurred": True
+        }
     
 
 @track_node_metrics("ValidatorAgent")
 def validator_agent(state: AgentState) -> dict:
-    start = time.time()
-    print(">>> Validator Agent called")
-    system_prompt = SystemMessage(content=validator_prompt)
-    #replace with question
-    user_question = state["user_question"]
-    final_answer = state["final_answer"]
-    compressed_retrieved_results = compress_retrieved_results(state["retrieved_results"])
-    compressed_reranked_results = compress_reranked_results(state["reranked_results"])
+    try
+        start = time.time()
+        print(">>> Validator Agent called")
+        prompt = validator_prompt or "You are a strict validator agent checking response accuracy against evidence."        #need improvement
+        system_prompt = SystemMessage(content=prompt)
+        user_question = state.get("user_question", "Unknown query")
+        final_answer = state.get("final_answer", "No answer generated")
+        compressed_retrieved_results = compress_retrieved_results(state.get("retrieved_results", []))
+        compressed_reranked_results = compress_reranked_results(state.get("reranked_results", []))
+        recent_messages = state.get("messages", [])[:-1][-5:]
+        context_transcript = "\n".join([
+            f"{msg.type.capitalize()}: {msg.content}" 
+            for msg in recent_messages
+        ]) if recent_messages else "No prior conversation context."
 
-    recent_messages = state.get("messages", [])[:-1][-5:]
-    context_transcript = "\n".join([
-        f"{msg.type.capitalize()}: {msg.content}" 
-        for msg in recent_messages
-    ]) if recent_messages else "No prior conversation context."
+        message = HumanMessage(content=f"""
+    Conversation History:
+    {context_transcript}
 
-    message = HumanMessage(content=f"""
-Conversation History:
-{context_transcript}
+    Orginal user query:                 
+    {user_question}
 
-Orginal user query:                 
-{user_question}
+    Retrieved Evidence:
+    {compressed_retrieved_results}
 
-Retrieved Evidence:
-{compressed_retrieved_results}
+    Reranked Evidence:
+    {compressed_reranked_results}
 
-Reranked Evidence:
-{compressed_reranked_results}
+    synthesized final answer:
+    {final_answer}
+        """)
 
-synthesized final answer:
-{final_answer}
-    """)
-
-    structured_llm = llm.with_structured_output(ValidatorResponse)    
-    result = structured_llm.invoke([system_prompt, message])
-    assert isinstance(result, ValidatorResponse)
-    validation_result = ValidationResult(
-        is_valid=result.is_valid,
-        failure_type=result.failure_type,
-        reason=result.reason
-    )
+        try:
+            structured_llm = llm.with_structured_output(ValidatorResponse)    
+            result = structured_llm.invoke([system_prompt, message])
+            assert isinstance(result, ValidatorResponse)
+            validation_result = ValidationResult(
+                is_valid=result.is_valid,
+                failure_type=result.failure_type,
+                reason=result.reason
+            )
+            error_occured = False
+        except Exception as e:
+            print(f"⚠️ [Error Boundary] Validator LLM invocation failed: {str(e)}")
+            validation_result = ValidationResult(
+                is_valid=True,
+                failure_type="llm_invocation_error_fallback",
+                reason=f"Validator failed due to error: {str(e)}",
+            )
+            error_occured = True
+        
+        print(f"⏱ validator_agent took {time.time() - start:.4f}s")
+        return {
+            "validation_result": validation_result,
+            "error_occured": error_occured
+        }
     
-    print(f"⏱ validator_agent took {time.time() - start:.4f}s")
-    return {
-        "validation_result": validation_result
-    }
+    except Exception as e:
+        print(f"⚠️ [Critical Error in ValidatorAgent]: {str(e)}")
+        # Safe emergency fallback state return
+        return {
+            "validation_result": ValidationResult(
+                is_valid=True,
+                failure_type="critical_error_fallback",
+                reason=str(e)
+            ),
+            "error_occurred": True
+        }
 
 
 #Reset nodes for retry
@@ -278,14 +368,14 @@ def initial_router(state: AgentState) -> str:
 
 
 def retry_router(state: AgentState):
-    validation = state["validation_result"]
-    if validation["is_valid"]:
+    validation = state.get("validation_result")
+    if validation and validation.get("is_valid"):
         return "END"
     
     if state.get("try_no", 1) >= state.get("max_try", 1):
         return "END"
 
-    return validation["failure_type"]
+    return validation.get("failure_type")
 
 
 

@@ -23,6 +23,8 @@ class ValidationResult(TypedDict):
         "retrieval",
         "reranking",
         "synthesis",
+        "llm_invocation_error_fallback",
+        "critical_error_fallback"
     ]
 
     reason: str
