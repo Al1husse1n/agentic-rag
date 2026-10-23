@@ -13,6 +13,11 @@ import pypdf
 load_dotenv()
 
 
+if not os.getenv("GOOGLE_API_KEY"):
+    raise ValueError("❌ CRITICAL: GOOGLE_API_KEY is missing from environment variables.")
+if not os.getenv("COHERE_API_KEY"):
+    raise ValueError("❌ CRITICAL: COHERE_API_KEY is missing from environment variables.")
+
 embeddings = GoogleGenerativeAIEmbeddings(
     model="gemini-embedding-001",
 )
@@ -44,15 +49,21 @@ co = cohere.ClientV2(
 
 def reranker_function(query: str, documents: list[Document]) -> list[Document]:
     start = time.time()
-    doc_texts = [doc.page_content for doc in documents]
+    try:
+        doc_texts = [doc.page_content for doc in documents]
 
-    results = co.rerank(
-        model="rerank-v4.0-fast",
-        query=query,
-        documents=doc_texts,
-        top_n=3
-    )
+        results = co.rerank(
+            model="rerank-v4.0-fast",
+            query=query,
+            documents=doc_texts,
+            top_n=3
+        )
 
-    reranked = [documents[result.index] for result in results.results]
-    print(f"⏱ reranker_function took {time.time() - start:.4f}s")
-    return reranked
+        reranked = [documents[result.index] for result in results.results]
+        print(f"⏱ reranker_function took {time.time() - start:.4f}s")
+        return reranked
+    
+    except Exception as e:
+        print(f"⚠️ [Error Boundary] Cohere reranking failed: {str(e)}. Falling back to standard retrieval order.")
+        # Fallback: Return the top documents as-is so the graph can continue uninterrupted
+        return documents[:3]
