@@ -34,24 +34,60 @@ llm = ChatGoogleGenerativeAI(
 
 @track_node_metrics("InitialAgent")
 def initial_agent(state: AgentState) -> dict[str, Any]:
-    start = time.time()
-    print(">>> Initial Agent called")
-    system_prompt = SystemMessage(content=initial_prompt)
-    #
-    messages = [system_prompt] + list(state["messages"][-5:])    #state is wrapped in list so it can satisfy pyright
-    structured_llm = llm.with_structured_output(InitialResponse)
-    result = structured_llm.invoke(messages)
-    print(result)
-    #result: InitialResponse = structured_llm.invoke(messages)
-    assert isinstance(result, InitialResponse)
-    print(f"⏱ initial_agent took {time.time() - start:.4f}s")
-    print(result.response)
-    return {
-        "need_retrieval": result.need_retrieval,
-        "need_clarification": result.need_clarification,
-        "user_question": state["messages"][-1].content,
-        **({"messages": [AIMessage(content=result.response or "")]} if not result.need_retrieval else {})
-    }
+    try:
+        start = time.time()
+        print(">>> Initial Agent called")
+        system_prompt = SystemMessage(content=initial_prompt)
+        if not system_prompt:
+            print("⚠️ [Config Warning] initial_prompt is missing. Falling back to default.")
+            system_prompt = "You are a helpful assistant for Ethiopian higher education."
+        messages = [system_prompt] + list(state.get("messages", [])[-5:])    
+        if not messages:
+            raise ValueError("State contains no messages for initial processing.")
+        try:
+            structured_llm = llm.with_structured_output(InitialResponse)
+            result = structured_llm.invoke(messages)
+        except Exception as e:
+            print(f"⚠️ [Error Boundary] Structured output or API failure: {str(e)}")
+            result = InitialResponse(
+                need_retrieval=True,       # Default safe fallback
+                need_clarification=False,  
+            )
+        print(result)
+        assert isinstance(result, InitialResponse)
+        print(f"⏱ initial_agent took {time.time() - start:.4f}s")
+
+        return {
+            "need_retrieval": result.need_retrieval,
+            "need_clarification": result.need_clarification,
+            "user_question": state.get("messages")[-1].content,
+            **({"messages": [AIMessage(content=result.response or "")]} if not result.need_retrieval else {})
+        }
+    
+    except ValueError as e:
+        if "no messages" in str(e):
+            print(str(e))
+            fallback_msg = "Hello! How can I help you with Ethiopian higher education today?"
+            return {
+                "need_retrieval": False,
+                "need_clarification": False,
+                "user_question": "",
+                "messages": [AIMessage(content=fallback_msg)],
+                "error_occured": True
+            }
+
+        print(f"⚠️ [ValueError in InitialAgent]: {str(e)}")
+        raise
+
+    except Exception as e:
+        print(f"⚠️ [Critical Error in InitialAgent]: {str(e)}")
+        fallback_msg = getattr(state.get("messages")[-1], "content", "Hello")
+        return {
+            "need_retrieval": True,
+            "need_clarification": False,
+            "user_question": fallback_msg,
+            "error_occurred": True
+        }
         
 @track_node_metrics("DecomposerAgent")
 def decomposer_agent(state: AgentState) -> dict:
@@ -169,7 +205,7 @@ def validator_agent(state: AgentState) -> dict:
 Conversation History:
 {context_transcript}
 
-Orginal user query:
+Orginal user query:                 
 {user_question}
 
 Retrieved Evidence:
@@ -230,6 +266,8 @@ def retrieve_fan_out(state: AgentState):
 
 #conditional routers
 def initial_router(state: AgentState) -> str:
+    if state.get("error_occured", False):
+        return "quit"
     if state.get("need_clarification", False):
         return "clarify"
     elif state.get("need_retrieval", False):
