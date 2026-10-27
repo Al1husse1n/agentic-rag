@@ -16,7 +16,7 @@ class RerankedResult(TypedDict):
 
 class ValidationResult(TypedDict):
     is_valid: bool
-    
+    confidence_score: float
     failure_type: Literal[
         "none",
         "decomposition",
@@ -46,7 +46,7 @@ class AgentState(TypedDict):
     reranked_results: NotRequired[Annotated[list[RerankedResult], operator.add]]   
     final_answer: NotRequired[str] 
     validation_result: NotRequired[ValidationResult]
-    
+
 
 class InitialResponse(BaseModel):
     """Route the user query to the appropriate pipeline."""
@@ -76,7 +76,7 @@ class SynthesizerResponse(BaseModel):
 
 class ValidatorResponse(BaseModel):
     is_valid: bool
-
+    confidence_score: float = Field(description="Confidence score between 0.0 and 1.0 based strictly on evidence alignment.")
     failure_type: Literal[
         "none",
         "decomposition",

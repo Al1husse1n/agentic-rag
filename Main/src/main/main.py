@@ -98,7 +98,7 @@ def decomposer_agent(state: AgentState) -> dict[str, Any]:
         start = time.time()
         print(">>> Decomposer Agent called")
         if not decomposer_prompt:
-            system_prompt = (content=("you are decomposer agent" ))                 # need improvement
+            system_prompt = SystemMessage(content="You are a query decomposer agent.")              # need improvement
         else:
             system_prompt = SystemMessage(content=decomposer_prompt)
 
@@ -253,7 +253,7 @@ def synthesizer_agent(state: AgentState) -> dict:
 
 @track_node_metrics("ValidatorAgent")
 def validator_agent(state: AgentState) -> dict:
-    try
+    try:
         start = time.time()
         print(">>> Validator Agent called")
         prompt = validator_prompt or "You are a strict validator agent checking response accuracy against evidence."        #need improvement
@@ -291,6 +291,7 @@ def validator_agent(state: AgentState) -> dict:
             assert isinstance(result, ValidatorResponse)
             validation_result = ValidationResult(
                 is_valid=result.is_valid,
+                confidence_score=result.confidence_score,
                 failure_type=result.failure_type,
                 reason=result.reason
             )
@@ -299,6 +300,7 @@ def validator_agent(state: AgentState) -> dict:
             print(f"⚠️ [Error Boundary] Validator LLM invocation failed: {str(e)}")
             validation_result = ValidationResult(
                 is_valid=True,
+                confidence_score=0.0,  # Zero confidence since validation couldn't run
                 failure_type="llm_invocation_error_fallback",
                 reason=f"Validator failed due to error: {str(e)}",
             )
@@ -316,6 +318,7 @@ def validator_agent(state: AgentState) -> dict:
         return {
             "validation_result": ValidationResult(
                 is_valid=True,
+                confidence_score=0.0,  # Zero confidence since validation couldn't run
                 failure_type="critical_error_fallback",
                 reason=str(e)
             ),
@@ -374,15 +377,23 @@ def initial_router(state: AgentState) -> str:
 
 
 
-def retry_router(state: AgentState):
+def retry_router(state: AgentState) -> str:
     validation = state.get("validation_result")
-    if validation and validation.get("is_valid"):
-        return "END"
-    
-    if state.get("try_no", 1) >= state.get("max_try", 1):
+    if not validation:
         return "END"
 
-    return validation.get("failure_type")
+    is_valid = getattr(validation, "is_valid", None) or validation.get("is_valid", False)
+    if is_valid:
+        return "END"
+
+    try_no = state.get("try_no", 1)
+    max_try = state.get("max_try", 1)
+    
+    if try_no >= max_try:
+        return "END"
+    
+    failure_type = getattr(validation, "failure_type", None) or validation.get("failure_type", "END")
+    return failure_type
 
 
 

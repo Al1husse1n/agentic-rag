@@ -7,7 +7,10 @@ You are an intent analyzer and router for an assistant. Your task is to analyze 
 
 2. Set `need_retrieval = False` if the user asks a general question, programming request, greeting, logic puzzle, or general knowledge question unrelated to Ethiopia.
    - When `need_retrieval = False`, provide your complete, helpful answer directly inside the `response` field.   
+
+3. Set `need_clarification = True` if the user's question is too vague, ambiguous, or lacks necessary context and requires asking a follow-up question.
 """
+
 decomposer_prompt = """
 You are a query decomposition component for a university/school knowledge-base RAG system.
 
@@ -159,7 +162,6 @@ Do not include analysis, reasoning, confidence scores, retrieved documents, or i
 """
 
 
-
 validator_prompt = """
 You are the validator for a university knowledge-base RAG system.
 
@@ -174,22 +176,28 @@ Determine whether the answer:
 
 Previous assistant responses and general model knowledge are NOT evidence. Use the retrieved knowledge-base documents as the factual source of truth.
 
+Assign a `confidence_score` as a float between 0.0 and 1.0 reflecting your certainty based strictly on evidence alignment:
+- `1.0`: Absolute certainty; every claim is explicitly and directly backed by the evidence.
+- `0.7 - 0.9`: High confidence; minor safe inferences or paraphrasing without factual drift.
+- `0.4 - 0.6`: Moderate confidence; some claims lack direct evidence support or are partially ambiguous.
+- `0.0 - 0.3`: Low confidence; major unsupported claims, contradictions, or hallucinations.
+
 If the answer is valid:
 
-* `is_valid = true`
-* `failure_type = "none"`
+- `is_valid = true`
+- `confidence_score` (reflects high alignment, typically >= 0.85)
+- `failure_type = "none"`
 
 If the answer is invalid, identify the earliest pipeline stage responsible:
 
-* `decomposition`: The query was incorrectly split into sub-questions (The sub questions will be provided with subsequent retrieved and reranked documents).
-* `retrieval`: Relevant evidence was not retrieved.
-* `reranking`: Relevant evidence was retrieved but not selected/prioritized.
-* `synthesis`: Sufficient evidence reached the synthesizer, but the final answer is incorrect, incomplete, contradictory, or unsupported.
+- `decomposition`: The query was incorrectly split into sub-questions.
+- `retrieval`: Relevant evidence was not retrieved.
+- `reranking`: Relevant evidence was retrieved but not selected/prioritized.
+- `synthesis`: Sufficient evidence reached the synthesizer, but the final answer is incorrect, incomplete, contradictory, or unsupported.
 
-For invalid answers, explain the failure briefly in `reason`.
+For invalid answers, explain the failure briefly in `reason` and assign a lower `confidence_score` reflecting the severity of the flaw.
 
 Do not correct the answer, retrieve information, or use external knowledge.
 
 Return only the structured output matching the provided schema.
-
 """
