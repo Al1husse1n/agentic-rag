@@ -374,7 +374,7 @@ def retry_router(state: AgentState) -> str:
     if not validation:
         return "END"
 
-    is_valid = getattr(validation, "is_valid", None) or validation.get("is_valid", False)
+    is_valid = validation.get("is_valid", False)
     if is_valid:
         return "END"
 
@@ -384,7 +384,7 @@ def retry_router(state: AgentState) -> str:
     if try_no >= max_try:
         return "END"
     
-    failure_type = getattr(validation, "failure_type", None) or validation.get("failure_type", "END")
+    failure_type = validation.get("failure_type", "END")
     return failure_type
 
 
@@ -465,8 +465,7 @@ user_query = "tell me about ethiopias geography" # Ask a question about your 2-p
 # Note: Make sure 'max_retry' is here so your retry_router works!
 initial_state = {
     "messages": [HumanMessage(content=user_query)],
-    "max_retry": 3,
-    "retry_count": 0,
+    "max_try": 3,
     "try_no": 0,
 }
 
