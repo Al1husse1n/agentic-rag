@@ -14,6 +14,7 @@ from langchain_core.tools import tool
 import cohere
 from langchain_core.documents import Document
 from langgraph.types import Overwrite, Send
+from langgraph.checkpoint.memory import MemorySaver             #for local dev't
 from pydantic import BaseModel, Field
 from .utils.logger import track_node_metrics
 
@@ -449,7 +450,9 @@ graph.add_conditional_edges(
 graph.add_edge("reset_reranker", "reranker")
 graph.add_edge("reset_decomposer", "decomposer")
 
-main = graph.compile()
+
+memory_checkpointer = MemorySaver()
+main = graph.compile(checkpointer=memory_checkpointer)
 
 # Save graph visualization to Mermaid file (.mmd)
 with open("graph.mmd", "w", encoding="utf-8") as f:
