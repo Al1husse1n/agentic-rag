@@ -84,7 +84,8 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
 
     except Exception as e:
         print(f"⚠️ [Critical Error in InitialAgent]: {str(e)}")
-        fallback_msg = getattr(state.get("messages")[-1], "content", "Hello")
+        msgs = state.get("messages", [])
+        fallback_msg = getattr(msgs[-1], "content", "Hello") if msgs else "Hello"
         return {
             "need_retrieval": True,
             "need_clarification": False,
@@ -119,14 +120,9 @@ def decomposer_agent(state: AgentState) -> dict[str, Any]:
 
     except Exception as e:
         print(f"⚠️ [Error Boundary] Decomposer failed: {str(e)}. Falling back to direct query.")
-        
         # Fallback: Use the user's original query as the sole sub-question
-        sub_questions = [state.get("user_question")]
-        
-        return {
-            "sub_questions": sub_questions
-        }
-
+        fallback_q = state.get("user_question")
+        return {"sub_questions": [fallback_q] if fallback_q else []}
 
 @track_node_metrics("RetrieverAgent")
 def retriever_agent(state: AgentState) -> dict[str, Any]:
@@ -136,9 +132,7 @@ def retriever_agent(state: AgentState) -> dict[str, Any]:
     if not question:
         print("⚠️ [Retriever Warning] Missing question in state.")
         return {
-            "retrieved_results": [],
-            "documents": [],
-            "question": ""
+            "retrieved_results": []
         }
     try:
         docs = retriever.invoke(question) 
@@ -319,6 +313,17 @@ def validator_agent(state: AgentState) -> dict:
 
 
 #Reset nodes for retry
+def reset_decomposer_node(state: AgentState) -> dict:
+    print(">>> Resetting decomposition + retrieval state for retry...")
+    return {
+        "retrieved_results": Overwrite([]),
+        "reranked_results": Overwrite([]),
+        "sub_questions": Overwrite([]),
+    }
+
+
+
+
 def reset_retriever_node(state:AgentState) -> dict:
     start = time.time()
     print(">>> Resetting stale retrieval state for retry...")
@@ -374,17 +379,17 @@ def retry_router(state: AgentState) -> str:
     if not validation:
         return "END"
 
-    is_valid = validation.get("is_valid", False)
-    if is_valid:
+    if validation.get("is_valid", False):
         return "END"
 
     try_no = state.get("try_no", 1)
     max_try = state.get("max_try", 1)
-    
     if try_no >= max_try:
         return "END"
-    
-    failure_type = validation.get("failure_type", "END")
+
+    failure_type = validation.get("failure_type", "none")
+    if failure_type in ("none", "llm_invocation_error_fallback", "critical_error_fallback"):
+        return "END"
     return failure_type
 
 
@@ -397,8 +402,10 @@ graph.add_node("retriever", retriever_agent)
 graph.add_node("reranker", reranker_agent)
 graph.add_node("synthesizer", synthesizer_agent)
 graph.add_node("validator", validator_agent)
+graph.add_node("reset_decomposer", reset_decomposer_node)
 graph.add_node("reset_retriever", reset_retriever_node)
 graph.add_node("reset_reranker", reset_rerank_node)
+
 
 graph.add_edge(START, "initial")
 
@@ -427,7 +434,7 @@ graph.add_conditional_edges(
     retry_router,
     {
         "END": END,
-        "decomposition": "decomposer",
+        "decomposition": "reset_decomposer",
         "retrieval": "reset_retriever",
         "reranking": "reset_reranker",
         "synthesis": "synthesizer"
@@ -440,6 +447,7 @@ graph.add_conditional_edges(
     ["retriever"]
 )
 graph.add_edge("reset_reranker", "reranker")
+graph.add_edge("reset_decomposer", "decomposer")
 
 main = graph.compile()
 
