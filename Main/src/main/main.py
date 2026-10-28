@@ -76,7 +76,7 @@ def initial_agent(state: AgentState) -> dict[str, Any]:
                 "need_clarification": False,
                 "user_question": "",
                 "messages": [AIMessage(content=fallback_msg)],
-                "error_occured": True
+                "error_occurred": True
             }
 
         print(f"⚠️ [ValueError in InitialAgent]: {str(e)}")
@@ -157,9 +157,7 @@ def retriever_agent(state: AgentState) -> dict[str, Any]:
         
     print(f"⏱ retriever_agent took {time.time() - start:.4f}s")
     return {
-        "retrieved_results": [retrieved_result],
-        "documents": docs,
-        "question": question
+        "retrieved_results": [retrieved_result]
     }
 
 
@@ -167,28 +165,22 @@ def retriever_agent(state: AgentState) -> dict[str, Any]:
 def reranker_agent(state: AgentState) -> dict:
     start = time.time()
     print(">>> Reranker Agent called")
-    docs = state.get("documents", [])
-    question = state.get("question", "")
 
-    try:
-        if docs and question:
-            reranked_docs = reranker_function(question, docs)
-        else:
+    all_reranked_results = []
+    for res in state.get("retrieved_results", []):
+        question = res.get("question") 
+        docs = res.get("documents", []) 
+        try:
+            reranked_docs = reranker_function(question, docs) if (docs and question) else docs
+        except Exception as e:
+            print(f"⚠️ [Error Boundary] Reranker failed for '{question}': {e}")
             reranked_docs = docs
-    except Exception as e:
-        print(f"⚠️ [Error Boundary] Reranker failed: {str(e)}. Falling back to original documents.")
-        # Fallback: pass through original un-reranked documents
-        reranked_docs = docs
-        
-    reranked_results = RerankedResult(
-        question=question,
-        documents=reranked_docs    
-    )
-    
+        all_reranked_results.append(
+            RerankedResult(question=question, documents=reranked_docs)
+        )
+
     print(f"⏱ reranker_agent took {time.time() - start:.4f}s")
-    return {
-        "reranked_results": [reranked_results]
-    }
+    return {"reranked_results": all_reranked_results}
 
 
 @track_node_metrics("SynthesizerAgent")
@@ -295,7 +287,7 @@ def validator_agent(state: AgentState) -> dict:
                 failure_type=result.failure_type,
                 reason=result.reason
             )
-            error_occured = False
+            error_occurred = False
         except Exception as e:
             print(f"⚠️ [Error Boundary] Validator LLM invocation failed: {str(e)}")
             validation_result = ValidationResult(
@@ -304,12 +296,12 @@ def validator_agent(state: AgentState) -> dict:
                 failure_type="llm_invocation_error_fallback",
                 reason=f"Validator failed due to error: {str(e)}",
             )
-            error_occured = True
+            error_occurred = True
         
         print(f"⏱ validator_agent took {time.time() - start:.4f}s")
         return {
             "validation_result": validation_result,
-            "error_occured": error_occured
+            "error_occurred": error_occurred
         }
     
     except Exception as e:
@@ -366,7 +358,7 @@ def retrieve_fan_out(state: AgentState):
 
 #conditional routers
 def initial_router(state: AgentState) -> str:
-    if state.get("error_occured", False):
+    if state.get("error_occurred", False):
         return "quit"
     if state.get("need_clarification", False):
         return "clarify"

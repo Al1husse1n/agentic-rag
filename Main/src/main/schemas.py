@@ -38,8 +38,7 @@ class AgentState(TypedDict):
     need_retrieval: NotRequired[bool]
     need_clarification: NotRequired[bool]
     question: NotRequired[str]                  #used for both retriever and reducer
-    error_occured: NotRequired[bool]
-    documents: NotRequired[list[Document]]
+    error_occurred: NotRequired[bool]
     is_single_question: NotRequired[bool]
     sub_questions: NotRequired[list[str]]
     retrieved_results: NotRequired[Annotated[list[RetrievedResult], operator.add]]          # we may need the pre-reranking candidates for retry logic, debugging, evaluation, fallback if retrieval fails
