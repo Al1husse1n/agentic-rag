@@ -14,14 +14,14 @@ from langchain_core.tools import tool
 import cohere
 from langchain_core.documents import Document
 from langgraph.types import Overwrite, Send
-from langgraph.checkpoint.memory import MemorySaver             #for local dev't
+from langgraph.checkpoint.memory import MemorySaver             
 from pydantic import BaseModel, Field
 from .utils.logger import track_node_metrics
 
 from .schemas import AgentState, InitialResponse, ValidatorResponse, DecomposerResponse, RetrievedResult, RerankedResult, SynthesizerResponse, ValidationResult
 from .system_prompts import initial_prompt,validator_prompt, decomposer_prompt, synthesizer_prompt
 from .retriever import reranker_function, retriever
-from .helper_functions import format_reranked_results, compress_reranked_results, compress_retrieved_results
+from .utils.helper_functions import format_reranked_results, compress_reranked_results, compress_retrieved_results
 
 
 load_dotenv()
@@ -451,6 +451,7 @@ graph.add_edge("reset_reranker", "reranker")
 graph.add_edge("reset_decomposer", "decomposer")
 
 
+#config = {"configurable": {"thread_id": "student_session_123"}}            example thread_id coming from backend
 memory_checkpointer = MemorySaver()
 main = graph.compile(checkpointer=memory_checkpointer)
 
@@ -486,3 +487,4 @@ result = main.invoke(initial_state)
 # Print the final answer
 print("\n--- FINAL ANSWER ---")
 print(result.get("final_answer"))
+

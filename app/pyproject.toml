@@ -17,7 +17,8 @@ dependencies = [
     "langchain-text-splitters (>=1.1.2,<2.0.0)",
     "cohere (>=7.2.0,<8.0.0)",
     "pypdf (>=6.21.1,<7.0.0)",
-    "grandalf (>=0.8,<0.9)"
+    "grandalf (>=0.8,<0.9)",
+    "fastapi[standard] (>=0.162.0,<0.163.0)"
 ]
 
 [tool.poetry]
