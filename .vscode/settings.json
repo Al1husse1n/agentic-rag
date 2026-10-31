@@ -1,14 +1,13 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/Main/.venv/Scripts/python.exe",
-  "python.languageServer": "None",
+  "python.defaultInterpreterPath": "${workspaceFolder}/app/.venv/Scripts/python.exe",
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.diagnosticSeverityOverrides": {
     "reportMissingImports": "error"
   },
   "python.analysis.autoImportCompletions": true,
   "python.analysis.extraPaths": [
-    "${workspaceFolder}/Main",
-    "${workspaceFolder}/Main/src"
+    "${workspaceFolder}/app",
+    "${workspaceFolder}/app/src"
   ],
   "editor.quickSuggestions": {
     "other": "on",
