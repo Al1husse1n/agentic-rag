@@ -5,10 +5,17 @@ and serialized output responses across all API endpoints.
 """
 
 from src.schemas.auth import Token, TokenData, UserResponse
+from src.schemas.document import (
+    DocumentCreate,
+    DocumentListResponse,
+    DocumentResponse,
+)
 
 __all__ = [
+    "DocumentCreate",
+    "DocumentListResponse",
+    "DocumentResponse",
     "Token",
     "TokenData",
     "UserResponse",
 ]
-
