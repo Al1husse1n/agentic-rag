@@ -1,10 +1,10 @@
 import unittest
 from pathlib import Path
 
-from src.main.utils.golden_qa import(
+from src.agent.utils.golden_qa import (
     append_golden_qa_entry,
-    parse_golden_qa_file,
     check_golden_cache,
+    parse_golden_qa_file,
 )
 
 
@@ -64,6 +64,7 @@ class TestGoldenQAService(unittest.TestCase):
         match = check_golden_cache(student_query, threshold=0.75, filepath=self.test_file)
 
         self.assertIsNone(match)
+
 
 if __name__ == "__main__":
     unittest.main()
