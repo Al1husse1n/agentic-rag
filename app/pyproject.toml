@@ -18,7 +18,11 @@ dependencies = [
     "cohere (>=7.2.0,<8.0.0)",
     "pypdf (>=6.21.1,<7.0.0)",
     "grandalf (>=0.8,<0.9)",
-    "fastapi[standard] (>=0.162.0,<0.163.0)"
+    "fastapi[standard] (>=0.162.0,<0.163.0)",
+    "pwdlib[argon2] (>=0.3.1,<1.0.0)",
+    "pyjwt (>=2.10.0,<3.0.0)",
+    "asyncpg (>=0.30.0,<1.0.0)",
+    "email-validator (>=2.0.0,<3.0.0)"
 ]
 
 [tool.poetry]
