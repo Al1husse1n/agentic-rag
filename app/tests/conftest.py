@@ -142,12 +142,15 @@ async def instructor_user(test_session: AsyncSession) -> dict[str, Any]:
         test_session.add(RolePermission(id=uuid.uuid4(), role=role_admin, permission=perm))
 
     # 3. Create user
+    user_id = uuid.uuid4()
     user = User(
-        id=uuid.uuid4(),
+        id=user_id,
         email_address="instructor@university.edu",
         hashed_password=hash_password(raw_password),
         full_name="Dr. Sarah Jenkins",
         is_active=True,
+        created_by=user_id,
+        updated_by=user_id,
     )
     test_session.add(user)
 
@@ -181,12 +184,15 @@ async def student_user(test_session: AsyncSession) -> dict[str, Any]:
 
     test_session.add(RolePermission(id=uuid.uuid4(), role=role_student, permission=perm_read))
 
+    user_id = uuid.uuid4()
     user = User(
-        id=uuid.uuid4(),
+        id=user_id,
         email_address="student@university.edu",
         hashed_password=hash_password(raw_password),
         full_name="Alex Student",
         is_active=True,
+        created_by=user_id,
+        updated_by=user_id,
     )
     test_session.add(user)
     test_session.add(UserRole(id=uuid.uuid4(), user=user, role=role_student))
@@ -210,12 +216,15 @@ async def inactive_user(test_session: AsyncSession) -> dict[str, Any]:
     """Seed and return a deactivated user account (`is_active=False`)."""
     raw_password = "Password123!"
 
+    user_id = uuid.uuid4()
     user = User(
-        id=uuid.uuid4(),
+        id=user_id,
         email_address="deactivated@university.edu",
         hashed_password=hash_password(raw_password),
         full_name="Locked Account",
         is_active=False,
+        created_by=user_id,
+        updated_by=user_id,
     )
     test_session.add(user)
     await test_session.commit()
