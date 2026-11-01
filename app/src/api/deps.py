@@ -105,6 +105,50 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/login",
+    auto_error=False,
+    description="Optional JWT Bearer token authentication header.",
+)
+
+
+async def get_optional_current_user(
+    token: Annotated[str | None, Depends(oauth2_scheme_optional)],
+    db: SessionDep,
+) -> User | None:
+    """Return the authenticated User if valid Bearer token provided; otherwise None."""
+    if not token:
+        return None
+    try:
+        payload = decode_access_token(token)
+        if not payload:
+            return None
+        subject: str | None = payload.get("sub")
+        if not subject:
+            return None
+        user_uuid = UUID(subject)
+        stmt = (
+            select(User)
+            .options(
+                selectinload(User.user_roles)
+                .selectinload(UserRole.role)
+                .selectinload(Role.role_permissions)
+                .selectinload(RolePermission.permission)
+            )
+            .where(User.id == user_uuid)
+        )
+        result = await db.execute(stmt)
+        user = result.scalars().first()
+        if user and user.is_active:
+            return user
+        return None
+    except Exception:
+        return None
+
+
+OptionalCurrentUser = Annotated[User | None, Depends(get_optional_current_user)]
+
+
 
 def require_role(required_role: str) -> Callable[[User], User]:
     def role_checker(current_user: CurrentUser) -> User:
