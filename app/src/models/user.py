@@ -45,15 +45,15 @@ class User(Base):
         nullable=False
     )
 
-    created_by: Mapped[uuid.UUID | None] = mapped_column(       # remove |None once you created the first admin
+    created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=True                   # change to False once you created the first admin
+        nullable=False
     )
-    updated_by: Mapped[uuid.UUID | None] = mapped_column(   # remove |None once you created the first admin
+    updated_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        nullable=True                 # change to False once you created the first admin
+        nullable=False
     )
 
     # relationships
