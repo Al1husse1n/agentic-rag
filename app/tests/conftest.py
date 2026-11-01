@@ -72,8 +72,19 @@ async def test_session(test_engine: AsyncEngine) -> AsyncGenerator[AsyncSession,
         class_=AsyncSession,
         expire_on_commit=False,
     )
+    import src.api.v1.chat as chat_module
+    import src.core.database as db_module
+
+    orig_db_maker = db_module.AsyncSessionLocal
+    orig_chat_maker = chat_module.AsyncSessionLocal
+    db_module.AsyncSessionLocal = session_factory
+    chat_module.AsyncSessionLocal = session_factory
+
     async with session_factory() as session:
         yield session
+
+    db_module.AsyncSessionLocal = orig_db_maker
+    chat_module.AsyncSessionLocal = orig_chat_maker
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -85,6 +96,14 @@ async def client(test_engine: AsyncEngine) -> AsyncGenerator[httpx.AsyncClient, 
         expire_on_commit=False,
     )
 
+    import src.api.v1.chat as chat_module
+    import src.core.database as db_module
+
+    orig_db_maker = db_module.AsyncSessionLocal
+    orig_chat_maker = chat_module.AsyncSessionLocal
+    db_module.AsyncSessionLocal = session_factory
+    chat_module.AsyncSessionLocal = session_factory
+
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with session_factory() as session:
             yield session
@@ -95,6 +114,8 @@ async def client(test_engine: AsyncEngine) -> AsyncGenerator[httpx.AsyncClient, 
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
 
+    db_module.AsyncSessionLocal = orig_db_maker
+    chat_module.AsyncSessionLocal = orig_chat_maker
     app.dependency_overrides.clear()
 
 
