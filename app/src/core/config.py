@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     SECRET_KEY: SecretStr
     ALGORITHM: str = 'HS256'
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    TELEGRAM_BOT_TOKEN: str | None = None
+    TELEGRAM_ADMIN_CHAT_ID: str | None = None
 
 
 settings = Settings()       # type: ignore[call-arg]
