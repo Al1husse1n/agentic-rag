@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from src.core.config import settings
-from src.services.telegram_alert import send_low_confidence_telegram_alert
+from src.services.telegram_alert import (
+    find_source_file,
+    format_sources_summary,
+    send_low_confidence_telegram_alert,
+    send_telegram_document_file,
+)
 
 
 @pytest.mark.asyncio
@@ -18,7 +24,6 @@ async def test_telegram_alert_skipped_when_unconfigured():
     with patch.object(settings, "TELEGRAM_BOT_TOKEN", None), patch.object(
         settings, "TELEGRAM_ADMIN_CHAT_ID", None
     ):
-        # Should execute cleanly without raising
         await send_low_confidence_telegram_alert(
             audit_id=uuid.uuid4(),
             user_query="How do I register?",
@@ -87,3 +92,89 @@ async def test_telegram_alert_anonymous_user():
         assert mock_post.called
         payload = mock_post.call_args.kwargs["json"]
         assert "Anonymous / Unauthenticated" in payload["text"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_alert_includes_source_document_summary():
+    """Verify that the source document details and excerpts are formatted in the alert text."""
+    audit_id = uuid.uuid4()
+    sources = [
+        {
+            "filename": "academic_calendar_2026.pdf",
+            "content": "Add/drop period ends on the second Friday of each semester.",
+            "metadata": {"page": 3},
+        },
+        {
+            "filename": "undergrad_handbook.pdf",
+            "content": "Tuition refund policies are managed by the bursar's office.",
+            "metadata": {"page": 15},
+        },
+    ]
+
+    mock_resp = AsyncMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(settings, "TELEGRAM_BOT_TOKEN", "123456:FAKE_TOKEN"), patch.object(
+        settings, "TELEGRAM_ADMIN_CHAT_ID", "-100123456789"
+    ), patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_resp)) as mock_post:
+
+        await send_low_confidence_telegram_alert(
+            audit_id=audit_id,
+            user_query="When is the add/drop deadline?",
+            ai_response="Add/drop ends in the second week.",
+            confidence_score=0.45,
+            retrieved_sources=sources,
+            user_id=None,
+        )
+
+        assert mock_post.called
+        payload = mock_post.call_args.kwargs["json"]
+        text = payload["text"]
+        assert "Source Documents:" in text
+        assert "academic_calendar_2026.pdf" in text
+        assert "(p. 3)" in text
+        assert "Add/drop period ends" in text
+        assert "undergrad_handbook.pdf" in text
+        assert "(p. 15)" in text
+
+
+@pytest.mark.asyncio
+async def test_telegram_alert_sends_physical_document_file(tmp_path: Path):
+    """Verify that if a physical source document exists on disk, sendDocument is invoked."""
+    audit_id = uuid.uuid4()
+
+    # Create dummy source PDF file
+    test_pdf = tmp_path / "course_catalog.pdf"
+    test_pdf.write_bytes(b"%PDF-1.4 Mock document content for testing")
+
+    sources = [
+        {
+            "filename": "course_catalog.pdf",
+            "content": "Course prerequisites are outlined in section 2.",
+            "metadata": {"file_path": str(test_pdf), "page": 1},
+        }
+    ]
+
+    mock_resp = AsyncMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status = MagicMock()
+
+    with patch.object(settings, "TELEGRAM_BOT_TOKEN", "123456:FAKE_TOKEN"), patch.object(
+        settings, "TELEGRAM_ADMIN_CHAT_ID", "-100123456789"
+    ), patch("httpx.AsyncClient.post", new=AsyncMock(return_value=mock_resp)) as mock_post:
+
+        await send_low_confidence_telegram_alert(
+            audit_id=audit_id,
+            user_query="What are the CS prerequisites?",
+            ai_response="Prerequisites include CS101.",
+            confidence_score=0.42,
+            retrieved_sources=sources,
+            user_id=None,
+        )
+
+        # Expect 2 calls: 1 for sendMessage (alert) + 1 for sendDocument (attachment)
+        assert mock_post.call_count == 2
+        endpoints = [call.args[0] for call in mock_post.call_args_list]
+        assert any("sendMessage" in ep for ep in endpoints)
+        assert any("sendDocument" in ep for ep in endpoints)
