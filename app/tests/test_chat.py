@@ -158,13 +158,15 @@ async def test_chat_stream_low_confidence_triggers_audit_and_sse_events(
 
     # Verify audit escalation payload
     escalation_event = next(e for e in events if e["type"] == "audit_escalation")
-    assert escalation_event["confidence_score"] == 0.48
     assert escalation_event["audit_id"] is not None
+    assert escalation_event["escalated"] is True
+    assert "not completely certain" in escalation_event["message"]
 
     # Verify done event
     done_event = next(e for e in events if e["type"] == "done")
     assert done_event["escalated_to_audit"] is True
-    assert done_event["confidence_score"] == 0.48
+    assert done_event["disclaimer"] is not None
+    assert "not completely certain" in done_event["disclaimer"]
     assert done_event["audit_id"] == escalation_event["audit_id"]
 
     # Verify the AuditLog entry was persisted in the database
@@ -215,7 +217,7 @@ async def test_chat_stream_high_confidence_no_audit(
     done_event = next(e for e in events if e["type"] == "done")
     assert done_event["escalated_to_audit"] is False
     assert done_event["audit_id"] is None
-    assert done_event["confidence_score"] == 0.95
+    assert done_event.get("disclaimer") is None
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +251,8 @@ async def test_chat_query_synchronous_audit_escalation(
     assert data["escalated_to_audit"] is True
     assert data["confidence_score"] == 0.55
     assert data["audit_id"] is not None
+    assert data["disclaimer"] is not None
+    assert "not completely certain" in data["disclaimer"]
     assert len(data["sources"]) == 1
     assert data["sources"][0]["filename"] == "fee_waiver.pdf"
 
