@@ -29,3 +29,4 @@ class ChatQueryResponse(BaseModel):
     confidence_score: float = Field(..., description="Calculated confidence or semantic match score (0.0 - 1.0)")
     escalated_to_audit: bool = Field(..., description="Whether the inquiry was flagged for instructor audit review")
     audit_id: UUID | None = Field(default=None, description="UUID of the persisted AuditLog record if escalated")
+    disclaimer: str | None = Field(default=None, description="User-friendly disclaimer when confidence is below threshold")
