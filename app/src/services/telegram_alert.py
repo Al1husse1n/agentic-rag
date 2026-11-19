@@ -35,8 +35,8 @@ def format_sources_summary(
     if not retrieved_sources:
         return "None (Potential Context Gap detected)"
 
-    sources_list = (
-        [{"filename": k, "content": str(v)} for k, v in retrieved_sources.items()]
+    sources_list: list[dict[str, Any]] = (
+        [{"filename": str(k), "content": str(v), "metadata": {}} for k, v in retrieved_sources.items()]
         if isinstance(retrieved_sources, dict)
         else retrieved_sources
     )
@@ -44,11 +44,12 @@ def format_sources_summary(
     formatted_docs: list[str] = []
     # Display up to top 3 referenced document chunks
     for idx, src in enumerate(sources_list[:3], start=1):
-        filename = src.get("filename") or "unknown_document"
-        metadata = src.get("metadata") or {}
+        filename = str(src.get("filename") or "unknown_document")
+        raw_meta = src.get("metadata")
+        metadata: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
         page = metadata.get("page")
         page_str = f" (p. {page})" if page is not None else ""
-        content = src.get("content", "").strip()
+        content = str(src.get("content") or "").strip()
         snippet = f"{content[:180]}..." if len(content) > 180 else content
 
         entry = f"• [{idx}] {filename}{page_str}"
@@ -135,9 +136,13 @@ async def send_low_confidence_telegram_alert(
     if isinstance(retrieved_sources, list):
         sent_files: set[str] = set()
         for src in retrieved_sources[:2]:  # Limit to top 2 files to avoid spamming
-            filename = src.get("filename", "")
+            if not isinstance(src, dict):
+                continue
+            filename = str(src.get("filename") or "")
+            raw_meta = src.get("metadata")
+            metadata: dict[str, Any] = raw_meta if isinstance(raw_meta, dict) else {}
             if filename and filename not in sent_files:
-                file_path = find_source_file(filename, src.get("metadata"))
+                file_path = find_source_file(filename, metadata)
                 if file_path:
                     sent_files.add(filename)
                     caption = f"📄 Source Document: {filename}\nAudit ID: {audit_id}"
