@@ -153,7 +153,11 @@ async def run_agent_workflow(
         }
 
         # Run synchronous LangGraph invoke in an async worker thread
-        result = await anyio.to_thread.run_sync(agent_graph.invoke, initial_state)
+        def _invoke_graph() -> dict[str, Any]:
+            res = agent_graph.invoke(initial_state)  # type: ignore[arg-type]
+            return res if isinstance(res, dict) else {}
+
+        result = await anyio.to_thread.run_sync(_invoke_graph)
 
         # Extract synthesized answer
         answer = result.get("final_answer")
