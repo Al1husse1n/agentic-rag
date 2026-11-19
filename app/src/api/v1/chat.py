@@ -143,6 +143,26 @@ async def run_agent_workflow(
         tuple[str, float, list[dict[str, Any]]]: (ai_answer, confidence_score, retrieved_sources)
     """
     try:
+        # Check verified Golden Q&A hotfix cache first for fast-path high-confidence match
+        from src.agent.utils.golden_qa import check_golden_cache
+        golden_match = check_golden_cache(query, threshold=0.80)
+        if golden_match:
+            logger.info("Serving query '%s' directly from Golden Q&A hotfix cache", query)
+            hotfix_answer = golden_match["answer"]
+            source_doc = golden_match.get("source_doc_id", "golden_qa.md")
+            sources = [{
+                "sub_question": query,
+                "filename": source_doc,
+                "content": hotfix_answer,
+                "metadata": {
+                    "source": source_doc,
+                    "type": "golden_qa_override",
+                    "instructor_id": golden_match.get("instructor_id", "TA"),
+                    "match_score": golden_match.get("match_score", 1.0),
+                },
+            }]
+            return str(hotfix_answer), 1.0, sources
+
         # Lazy import of compiled agent graph to avoid heavy startup 
         from src.agent.main import main as agent_graph
 
