@@ -35,6 +35,8 @@ from src.schemas.chat import (
     SourceCitation,
 )
 
+from src.services.telegram_alert import send_low_confidence_telegram_alert
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["Agentic Chat & Streaming"])
@@ -67,6 +69,7 @@ async def log_audit_background(
         user_id,
     )
 
+    persisted_successfully = False
     try:
         async with AsyncSessionLocal() as session:
             audit_entry = AuditLog( 
@@ -80,10 +83,25 @@ async def log_audit_background(
             )
             session.add(audit_entry)
             await session.commit()
+            persisted_successfully = True
             logger.info("Successfully persisted AuditLog record: %s", assigned_id)
 
     except Exception as exc:
         logger.exception("Failed to persist AuditLog in background task: %s", exc)
+
+    # Dispatch Telegram alert after DB session has committed and released its connection
+    if persisted_successfully:
+        try:
+            await send_low_confidence_telegram_alert(
+                audit_id=assigned_id,
+                user_query=user_query,
+                ai_response=ai_response,
+                confidence_score=confidence_score,
+                retrieved_sources=retrieved_sources,
+                user_id=user_id,
+            )
+        except Exception as exc:
+            logger.warning("Failed to trigger Telegram alert for audit_id=%s: %s", assigned_id, exc)
 
 
 # Context Extraction & Agent Invocation Helper
