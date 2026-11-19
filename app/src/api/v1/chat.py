@@ -144,8 +144,8 @@ async def run_agent_workflow(
     """
     try:
         # Check verified Golden Q&A hotfix cache first for fast-path high-confidence match
-        from src.agent.utils.golden_qa import check_golden_cache
-        golden_match = check_golden_cache(query, threshold=0.80)
+        from src.agent.utils.golden_qa import acheck_golden_cache
+        golden_match = await acheck_golden_cache(query, threshold=0.80)
         if golden_match:
             logger.info("Serving query '%s' directly from Golden Q&A hotfix cache", query)
             hotfix_answer = golden_match["answer"]
@@ -159,6 +159,7 @@ async def run_agent_workflow(
                     "type": "golden_qa_override",
                     "instructor_id": golden_match.get("instructor_id", "TA"),
                     "match_score": golden_match.get("match_score", 1.0),
+                    "match_reason": golden_match.get("match_reason"),
                 },
             }]
             return str(hotfix_answer), 1.0, sources

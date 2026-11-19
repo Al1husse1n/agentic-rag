@@ -33,3 +33,4 @@ class GoldenQACheckRequest(BaseModel):
 class GoldenQACheckResponse(BaseModel):
     matched: bool = Field(..., description="Whether a matching golden Q&A hotfix was found")
     entry: GoldenQAEntry | None = Field(default=None, description="Matched golden Q&A record if found")
+

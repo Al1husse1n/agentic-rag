@@ -14,6 +14,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 
 from src.agent.utils.golden_qa import (
+    acheck_golden_cache,
     append_golden_qa_entry,
     check_golden_cache,
     parse_golden_qa_file,
@@ -97,13 +98,13 @@ async def create_golden_qa_entry(
     response_model=GoldenQACheckResponse,
     status_code=status.HTTP_200_OK,
     summary="Check Golden Q&A Cache Match",
-    description="Perform fuzzy sequence matching of a student question against cached golden Q&A entries.",
+    description="Check student question against cached golden Q&A entries using fast LLM semantic evaluation.",
 )
 async def check_golden_qa_match(
     body: GoldenQACheckRequest,
 ) -> GoldenQACheckResponse:
-    """Check if an incoming query matches any verified golden Q&A overrides above the threshold."""
-    match = check_golden_cache(
+    """Check if an incoming query matches any verified golden Q&A overrides."""
+    match = await acheck_golden_cache(
         student_question=body.question,
         threshold=body.threshold,
     )

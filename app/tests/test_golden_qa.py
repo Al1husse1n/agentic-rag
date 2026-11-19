@@ -65,6 +65,37 @@ class TestGoldenQAService(unittest.TestCase):
 
         self.assertIsNone(match)
 
+    def test_semantic_matching_paraphrase(self):
+        append_golden_qa_entry(
+            question="What is the add/drop deadline?",
+            answer="Two weeks from the start of the semester.",
+            source_doc_id="academic_calendar_v1.pdf",
+            instructor_id="Dr. Alemayehu",
+            filepath=self.test_file,
+        )
+
+        # Semantically identical, but completely different words (where SequenceMatcher fails)
+        student_query = "Until when am I permitted to change my enrolled classes?"
+        match = check_golden_cache(student_query, filepath=self.test_file)
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertIn("Two weeks", match["answer"])
+
+    def test_semantic_false_positive_prevention(self):
+        append_golden_qa_entry(
+            question="What is the graduation fee?",
+            answer="The graduation fee is $150 payable in your final semester.",
+            source_doc_id="fees_2026.pdf",
+            instructor_id="Finance",
+            filepath=self.test_file,
+        )
+
+        # Shares most words with question, but asks for completely different concept (date vs fee)
+        student_query = "What is the graduation date?"
+        match = check_golden_cache(student_query, filepath=self.test_file)
+        # LLM should recognize 'date' != 'fee' and reject it
+        self.assertIsNone(match)
+
 
 if __name__ == "__main__":
     unittest.main()
